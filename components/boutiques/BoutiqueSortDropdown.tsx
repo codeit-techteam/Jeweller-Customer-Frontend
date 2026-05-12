@@ -42,15 +42,12 @@ export const BOUTIQUE_SORT_OPTIONS: {
 ];
 
 type SortRowDef = {
-  id: BoutiqueSortOptionId | 'DEFAULT';
+  id: BoutiqueSortOptionId;
   label: string;
   icon: React.ComponentProps<typeof MaterialIcons>['name'];
 };
 
-const ALL_SORT_ROWS: SortRowDef[] = [
-  ...BOUTIQUE_SORT_OPTIONS,
-  { id: 'DEFAULT', label: 'Default Order', icon: 'restart-alt' },
-];
+const ALL_SORT_ROWS: SortRowDef[] = [...BOUTIQUE_SORT_OPTIONS];
 
 const NAVY = '#0D1B2A';
 const NAVY_SOFT = 'rgba(13, 27, 42, 0.06)';
@@ -83,8 +80,8 @@ export function BoutiqueSortDropdown({ value, onChange }: Props) {
 
   const selectedOption = value
     ? BOUTIQUE_SORT_OPTIONS.find((o) => o.id === value)
-    : null;
-  const triggerLabel = selectedOption?.label ?? 'Sort by';
+    : BOUTIQUE_SORT_OPTIONS.find((o) => o.id === 'NEAREST');
+  const triggerLabel = selectedOption?.label ?? 'Nearest';
 
   const unmount = useCallback(() => setMounted(false), []);
 
@@ -210,12 +207,14 @@ export function BoutiqueSortDropdown({ value, onChange }: Props) {
               <View style={styles.optionGroup}>
                 {ALL_SORT_ROWS.map((row, idx) => {
                   const selected =
-                    row.id === 'DEFAULT' ? value === null : value === row.id;
+                    row.id === 'NEAREST'
+                      ? value === 'NEAREST' || value === null
+                      : value === row.id;
                   const isLast = idx === ALL_SORT_ROWS.length - 1;
                   const next = !isLast ? ALL_SORT_ROWS[idx + 1] : null;
                   const nextSelected = next
-                    ? next.id === 'DEFAULT'
-                      ? value === null
+                    ? next.id === 'NEAREST'
+                      ? value === 'NEAREST' || value === null
                       : value === next.id
                     : false;
                   const showDivider = !isLast && !selected && !nextSelected;
@@ -226,9 +225,7 @@ export function BoutiqueSortDropdown({ value, onChange }: Props) {
                       icon={row.icon}
                       selected={selected}
                       showDivider={showDivider}
-                      onPress={() =>
-                        pick(row.id === 'DEFAULT' ? null : row.id)
-                      }
+                      onPress={() => pick(row.id)}
                     />
                   );
                 })}

@@ -14,7 +14,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { BoutiqueCategorySegment, type BoutiqueCategoryTab } from '@/components/boutiques/BoutiqueCategorySegment';
 import {
   BoutiqueSortDropdown,
   BOUTIQUE_SORT_OPTIONS,
@@ -57,13 +56,6 @@ function parseDistanceKm(label: string | null): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function matchesCategory(item: Boutique, category: BoutiqueCategoryTab): boolean {
-  if (category === 'ALL') return true;
-  /** Rankable by distance from the user (location + boutique coordinates known). */
-  if (category === 'NEAR ME') return item.distanceKm != null;
-  return true;
-}
-
 function matchesSearch(item: Boutique, q: string): boolean {
   const s = q.trim().toLowerCase();
   if (!s) return true;
@@ -82,9 +74,10 @@ function matchesSearch(item: Boutique, q: string): boolean {
 
 function applySortOption(list: Boutique[], sort: BoutiqueSortOptionId | null): Boutique[] {
   const sorted = [...list];
-  if (sort == null) return sorted;
+  /** `null` = nearest-first (default). */
+  const effective: BoutiqueSortOptionId = sort ?? 'NEAREST';
 
-  switch (sort) {
+  switch (effective) {
     case 'NEAREST':
       sorted.sort((a, b) => {
         const da = a.distanceKm ?? Number.POSITIVE_INFINITY;
@@ -115,12 +108,10 @@ function applySortOption(list: Boutique[], sort: BoutiqueSortOptionId | null): B
 function filterAndSort(
   list: Boutique[],
   searchQuery: string,
-  category: BoutiqueCategoryTab,
   maxDistanceKm: number | null,
   sort: BoutiqueSortOptionId | null,
 ): Boutique[] {
   let out = list.filter((item) => matchesSearch(item, searchQuery));
-  out = out.filter((item) => matchesCategory(item, category));
   if (maxDistanceKm != null) {
     out = out.filter(
       (item) => item.distanceKm != null && item.distanceKm <= maxDistanceKm,
@@ -136,7 +127,6 @@ export default function BoutiquesScreen() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [rawBoutiques, setRawBoutiques] = useState<Boutique[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<BoutiqueCategoryTab>('ALL');
   const [selectedSort, setSelectedSort] = useState<BoutiqueSortOptionId | null>(null);
   const [selectedDistance, setSelectedDistance] = useState<string | null>(null);
   const [filterVisible, setFilterVisible] = useState(false);
@@ -181,13 +171,13 @@ export default function BoutiquesScreen() {
   const maxDistanceKm = useMemo(() => parseDistanceKm(selectedDistance), [selectedDistance]);
 
   const filteredBoutiques = useMemo(
-    () => filterAndSort(boutiquesData, searchQuery, selectedCategory, maxDistanceKm, selectedSort),
-    [boutiquesData, searchQuery, selectedCategory, maxDistanceKm, selectedSort],
+    () => filterAndSort(boutiquesData, searchQuery, maxDistanceKm, selectedSort),
+    [boutiquesData, searchQuery, maxDistanceKm, selectedSort],
   );
 
   const hasUserAppliedFilters = useMemo(
-    () => Boolean(searchQuery.trim() || selectedCategory !== 'ALL' || selectedDistance || selectedSort),
-    [searchQuery, selectedCategory, selectedDistance, selectedSort],
+    () => Boolean(searchQuery.trim() || selectedDistance || selectedSort),
+    [searchQuery, selectedDistance, selectedSort],
   );
 
   const openProfile = useCallback(
@@ -259,7 +249,7 @@ export default function BoutiquesScreen() {
   const ListHeader = useMemo(
     () => (
       <View style={styles.header}>
-        <Text style={styles.heading}>Boutiques Near You</Text>
+        <Text style={styles.heading}>Boutiques</Text>
         {reachable === false ? (
           <Text style={styles.offlineHint}>No connection. Confirm Wi‑Fi and LAN API URL (EXPO_PUBLIC_API_URL).</Text>
         ) : null}
@@ -311,8 +301,6 @@ export default function BoutiquesScreen() {
           </Pressable>
         </View>
 
-        <BoutiqueCategorySegment value={selectedCategory} onChange={setSelectedCategory} />
-
         <View style={styles.metaRow}>
           <Text style={styles.metaPrimary} numberOfLines={1}>
             <Text style={styles.metaCount}>{filteredBoutiques.length}</Text>
@@ -330,7 +318,6 @@ export default function BoutiquesScreen() {
       error,
       reachable,
       searchQuery,
-      selectedCategory,
       selectedSort,
       filteredBoutiques.length,
       loadBoutiques,
@@ -343,7 +330,7 @@ export default function BoutiquesScreen() {
         style={styles.listFlex}
         data={filteredBoutiques}
         keyExtractor={(item) => item.id}
-        extraData={`${searchQuery}-${selectedCategory}-${selectedSort}-${selectedDistance}-${locationLoading}-${locationPermission}-${userCoords?.lat ?? ''}-${userCoords?.lng ?? ''}-${locationGpsFailed}`}
+        extraData={`${searchQuery}-${selectedSort}-${selectedDistance}-${locationLoading}-${locationPermission}-${userCoords?.lat ?? ''}-${userCoords?.lng ?? ''}-${locationGpsFailed}`}
         contentContainerStyle={styles.content}
         ListHeaderComponent={ListHeader}
         renderItem={renderItem}
@@ -355,7 +342,7 @@ export default function BoutiquesScreen() {
           ) : !error && boutiquesData.length > 0 && hasUserAppliedFilters ? (
             <View style={styles.empty}>
               <Text style={styles.emptyTitle}>No boutiques match</Text>
-              <Text style={styles.emptySub}>Try adjusting search, filters, or distance.</Text>
+              <Text style={styles.emptySub}>Try adjusting search, distance, or sort.</Text>
             </View>
           ) : !error && boutiquesData.length === 0 ? (
             <View style={styles.empty}>

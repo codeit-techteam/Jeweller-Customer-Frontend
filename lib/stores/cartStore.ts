@@ -1,4 +1,7 @@
-import { create } from 'zustand';
+import { router } from "expo-router";
+import { create } from "zustand";
+
+import { showCartToast } from "@/lib/stores/cartToastStore";
 
 export type CartLine = {
   productId: string;
@@ -31,9 +34,15 @@ export const useCartStore = create<CartState>((set, get) => ({
       const next = [...items];
       next[i] = { ...next[i], qty: next[i].qty + qty };
       set({ items: next });
-      return;
+    } else {
+      set({ items: [...items, { ...line, qty }] });
     }
-    set({ items: [...items, { ...line, qty }] });
+    showCartToast({
+      actionText: "VIEW",
+      onAction: () => {
+        router.push("/(app)/cart");
+      },
+    });
   },
   removeItem: (productId, size, metal) =>
     set({ items: get().items.filter((x) => !(x.productId === productId && x.size === size && x.metal === metal)) }),

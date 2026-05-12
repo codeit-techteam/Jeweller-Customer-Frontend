@@ -64,6 +64,15 @@ function paramId(raw: string | string[] | undefined): string | undefined {
   return Array.isArray(raw) ? raw[0] : raw;
 }
 
+/** First remote image URL for cart rows (mock catalog does not know API UUIDs). */
+function firstHttpGalleryUri(images: ProductDetail["images"]): string | undefined {
+  for (const img of images) {
+    const u = img.uri?.trim();
+    if (u && /^https?:\/\//i.test(u)) return u;
+  }
+  return undefined;
+}
+
 const promiseTiles = [
   {
     title: "100% REFUND",
@@ -135,6 +144,10 @@ export default function ProductDetailsScreen() {
     }
     let cancelled = false;
     setLoading(true);
+    // Clear stale product immediately so we never show product A while route `id` is B
+    // (otherwise Add to cart can persist the wrong item).
+    setProduct(null);
+    setRelated([]);
     (async () => {
       try {
         const detail = await fetchProductDetailUi(id);
@@ -293,6 +306,7 @@ export default function ProductDetailsScreen() {
       metal,
       qty: 1,
       subtitle: `${metal} / ${size}`,
+      imageUri: firstHttpGalleryUri(product.images),
     });
   };
 

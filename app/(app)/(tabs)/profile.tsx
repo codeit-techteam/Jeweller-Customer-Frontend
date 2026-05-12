@@ -154,11 +154,6 @@ export default function ProfileTabScreen() {
             onPress={() => router.push('/(app)/appointments')}
           />
           <ProfileMenuItem
-            icon="location-on"
-            title="Address Book"
-            onPress={() => router.push('/(app)/address')}
-          />
-          <ProfileMenuItem
             icon="notifications-none"
             title="Notifications"
             badgeCount={0}

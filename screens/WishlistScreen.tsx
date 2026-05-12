@@ -64,11 +64,6 @@ export default function WishlistScreen() {
         imageUri: row?.image?.startsWith("http") ? row.image : undefined,
       });
       void removeWishlist(id);
-      Toast.show({
-        type: "success",
-        text1: "Added to cart",
-        text2: product.name,
-      });
     },
     [addItem, items, removeWishlist],
   );

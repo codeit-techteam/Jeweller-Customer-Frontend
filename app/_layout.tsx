@@ -18,6 +18,7 @@ import { AuthProvider } from "@/context/AuthContext";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { GlobalPopup } from "@/lib/components/common/GlobalPopup";
 import { toastConfig } from "@/lib/components/common/Toast";
+import { CartToast } from "@/lib/components/common/CartToast";
 import { WishlistToast } from "@/lib/components/common/WishlistToast";
 import { CustomSplashScreen } from "@/src/components/CustomSplashScreen";
 import { QueryProvider } from "@/src/providers/QueryProvider";
@@ -137,6 +138,7 @@ export default function RootLayout() {
               <StatusBar style="auto" />
               <AppToast />
               <WishlistToast />
+              <CartToast />
               <GlobalPopup />
             </AuthProvider>
           </QueryProvider>

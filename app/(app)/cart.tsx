@@ -1,44 +1,31 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import {
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import Toast from 'react-native-toast-message';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { RemoteImage } from '@/lib/components/common/RemoteImage';
-import {
-  CHECKOUT_GST_RATE,
-  mockDeliveryAddress,
-  resolveCartLineDisplay,
-} from '@/lib/services/mock/cart';
+import { CHECKOUT_GST_RATE, resolveCartLineDisplay } from '@/lib/services/mock/cart';
 import { useCartStore } from '@/lib/stores/cartStore';
 import { fontSizes, radius, spacing } from '@/src/constants/theme';
 
 const NAVY = '#0D1B2A';
 const LABEL = '#94a3b8';
 const MUTED = '#64748b';
-const GREEN = '#16a34a';
-/** Figma: inactive payment / stepper surface */
+/** Muted surfaces (thumbnails, qty pill) */
 const SURFACE_MUTED = '#F0F4F8';
-const PAY_INACTIVE_ICON = '#94a3b8';
-const PAY_INACTIVE_LABEL = '#64748b';
 const PAY_ACTIVE = '#111827';
-type PaymentId = 'card' | 'upi' | 'netbanking';
 
 export default function CartScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const items = useCartStore((s) => s.items);
   const setLineQty = useCartStore((s) => s.setLineQty);
-  const clearCart = useCartStore((s) => s.clear);
-  const [payment, setPayment] = useState<PaymentId>('card');
 
   const lines = useMemo(() => items.map((line) => resolveCartLineDisplay(line)), [items]);
 
@@ -46,36 +33,12 @@ export default function CartScreen() {
     () => items.reduce((s, x) => s + x.price * x.qty, 0),
     [items],
   );
-  const shipping = 0;
   const tax = useMemo(() => Math.round(subtotal * CHECKOUT_GST_RATE * 100) / 100, [subtotal]);
-  const total = useMemo(() => subtotal + shipping + tax, [subtotal, shipping, tax]);
+  const total = useMemo(() => subtotal + tax, [subtotal, tax]);
 
   const fmt = useCallback((n: number) => {
     return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }, []);
-
-  const onPlaceOrder = useCallback(() => {
-    if (items.length === 0) {
-      Toast.show({ type: 'error', text1: 'Your cart is empty' });
-      return;
-    }
-    if (!payment) {
-      Toast.show({ type: 'error', text1: 'Select a payment method' });
-      return;
-    }
-    console.log('[Checkout] place order', { payment, total });
-    clearCart();
-    router.push({
-      pathname: '/(app)/order-success',
-      params: {
-        orderId: `#JW-${String(Math.floor(100000 + Math.random() * 900000))}-24`,
-        estimatedDelivery: '24th Oct - 26th Oct',
-        address:
-          '1167 Kucha Mahajani, Chandni Chowk, New Delhi, Delhi 110006',
-        total: total.toFixed(2),
-      },
-    });
-  }, [clearCart, items.length, payment, router, total]);
 
   const dec = (productId: string, size: string, metal: string, qty: number) => {
     setLineQty(productId, size, metal, qty - 1);
@@ -162,69 +125,10 @@ export default function CartScreen() {
           </View>
         ))}
 
-        <View style={styles.addrHeader}>
-          <Text style={styles.addrEyebrow}>DELIVERY ADDRESS</Text>
-          <Pressable onPress={() => router.push('/(app)/address-details')} hitSlop={8}>
-            <Text style={styles.editLink}>Edit</Text>
-          </Pressable>
-        </View>
-        <View style={styles.addrCard}>
-          <View style={styles.pinCircle}>
-            <MaterialIcons name="location-on" size={20} color={PAY_ACTIVE} />
-          </View>
-          <View style={styles.addrTextCol}>
-            <Text style={styles.addrName}>{mockDeliveryAddress.name}</Text>
-            <Text style={styles.addrLines}>{mockDeliveryAddress.lines}</Text>
-          </View>
-        </View>
-
-        <Text style={[styles.sectionEyebrow, styles.payEyebrow]}>PAYMENT METHOD</Text>
-        <View style={styles.payRow}>
-          <Pressable
-            onPress={() => setPayment('card')}
-            style={[styles.payOption, payment === 'card' && styles.payOptionOn]}
-          >
-            <MaterialIcons
-              name="credit-card"
-              size={26}
-              color={payment === 'card' ? PAY_ACTIVE : PAY_INACTIVE_ICON}
-            />
-            <Text style={[styles.payLabel, payment !== 'card' && styles.payLabelInactive]}>CARD</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => setPayment('upi')}
-            style={[styles.payOption, payment === 'upi' && styles.payOptionOn]}
-          >
-            <MaterialIcons
-              name="account-balance-wallet"
-              size={26}
-              color={payment === 'upi' ? PAY_ACTIVE : PAY_INACTIVE_ICON}
-            />
-            <Text style={[styles.payLabel, payment !== 'upi' && styles.payLabelInactive]}>UPI</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => setPayment('netbanking')}
-            style={[styles.payOption, payment === 'netbanking' && styles.payOptionOn]}
-          >
-            <MaterialIcons
-              name="account-balance"
-              size={26}
-              color={payment === 'netbanking' ? PAY_ACTIVE : PAY_INACTIVE_ICON}
-            />
-            <Text style={[styles.payLabel, payment !== 'netbanking' && styles.payLabelInactive]}>
-              NET{'\n'}BANKING
-            </Text>
-          </Pressable>
-        </View>
-
         <View style={styles.summary}>
           <View style={styles.sumRow}>
             <Text style={styles.sumLabel}>Subtotal</Text>
             <Text style={styles.sumVal}>₹{fmt(subtotal)}</Text>
-          </View>
-          <View style={styles.sumRow}>
-            <Text style={styles.sumLabel}>Shipping</Text>
-            <Text style={[styles.sumVal, styles.sumFree]}>Free</Text>
           </View>
           <View style={styles.sumRow}>
             <Text style={styles.sumLabel}>Tax (GST)</Text>
@@ -252,50 +156,15 @@ export default function CartScreen() {
           </View>
         </View>
       </ScrollView>
-
-        <View
-          style={[
-            styles.bottomContainer,
-            {
-              paddingBottom: Math.max(insets.bottom, 14) + 10,
-              minHeight: 72 + Math.max(insets.bottom, 14),
-            },
-          ]}
-        >
-          <View style={[styles.placeOrderBtnOuter, PLACE_ORDER_SHADOW]}>
-            <Pressable
-              style={({ pressed }) => [styles.placeOrderBtnInner, pressed && styles.placeOrderPressed]}
-              onPress={onPlaceOrder}
-              accessibilityRole="button"
-              accessibilityLabel="Place order"
-            >
-              <View style={styles.placeOrderRow}>
-                <Text style={styles.placeOrderText}>Place Order</Text>
-                <MaterialIcons name="arrow-forward" size={18} color="#fff" style={styles.placeOrderArrow} />
-              </View>
-            </Pressable>
-          </View>
-        </View>
       </View>
     </SafeAreaView>
   );
 }
 
-const PLACE_ORDER_SHADOW = Platform.select({
-  ios: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 10,
-  },
-  android: { elevation: 5 },
-  default: {},
-});
-
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#fff' },
   screenBody: { flex: 1, backgroundColor: '#fff' },
-  /** flexShrink keeps scroll area from eating the footer; footer stays visible without absolute. */
+  /** flexShrink keeps scroll area usable inside flex parent */
   scrollFlex: { flex: 1, flexShrink: 1, minHeight: 0 },
   header: {
     flexDirection: 'row',
@@ -323,7 +192,6 @@ const styles = StyleSheet.create({
     color: LABEL,
     letterSpacing: 1,
   },
-  payEyebrow: { marginTop: spacing.xl },
   cartCard: {
     backgroundColor: '#fff',
     borderRadius: 18,
@@ -362,70 +230,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   qtyNum: { fontSize: fontSizes.md, fontWeight: '700', color: PAY_ACTIVE, minWidth: 24, textAlign: 'center' },
-  addrHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  addrEyebrow: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: LABEL,
-    letterSpacing: 1,
-  },
-  editLink: { fontSize: fontSizes.sm, fontWeight: '800', color: '#111827' },
-  addrCard: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    borderRadius: 18,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#e8eaed',
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-  },
-  pinCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: SURFACE_MUTED,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.md,
-  },
-  addrTextCol: { flex: 1 },
-  addrName: { fontSize: fontSizes.md, fontWeight: '800', color: '#111827' },
-  addrLines: { fontSize: fontSizes.sm, color: MUTED, marginTop: 4, lineHeight: 20 },
-  payRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg },
-  payOption: {
-    flex: 1,
-    aspectRatio: 1,
-    maxHeight: 100,
-    borderRadius: 14,
-    backgroundColor: SURFACE_MUTED,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: spacing.sm,
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  payOptionOn: {
-    backgroundColor: '#fff',
-    borderColor: PAY_ACTIVE,
-  },
-  payLabel: {
-    marginTop: spacing.xs,
-    fontSize: 9,
-    fontWeight: '800',
-    color: PAY_ACTIVE,
-    textAlign: 'center',
-  },
-  payLabelInactive: {
-    color: PAY_INACTIVE_LABEL,
-  },
   summary: {
-    marginTop: spacing.md,
+    marginTop: spacing.xl,
     paddingTop: spacing.md,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: '#eef2f6',
@@ -437,7 +243,6 @@ const styles = StyleSheet.create({
   },
   sumLabel: { fontSize: fontSizes.sm, color: MUTED },
   sumVal: { fontSize: fontSizes.sm, fontWeight: '700', color: '#111827' },
-  sumFree: { color: GREEN, fontWeight: '800' },
   sumTotalRow: {
     marginTop: spacing.md,
     paddingTop: spacing.md,
@@ -467,45 +272,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     textAlign: 'center',
   },
-  bottomContainer: {
-    flexShrink: 0,
-    backgroundColor: '#fff',
-    paddingHorizontal: spacing.sm,
-    paddingTop: 16,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#e8eaed',
-    zIndex: 2,
-    ...Platform.select({
-      android: { elevation: 8 },
-      default: {},
-    }),
-  },
-  placeOrderBtnOuter: {
-    backgroundColor: NAVY,
-    borderRadius: 999,
-    overflow: 'hidden',
-    width: '100%',
-  },
-  placeOrderBtnInner: {
-    paddingVertical: 17,
-    minHeight: 54,
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-  },
-  placeOrderPressed: { opacity: 0.92 },
-  placeOrderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  placeOrderText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-    letterSpacing: 0.2,
-  },
-  placeOrderArrow: { marginLeft: 8, marginTop: 1 },
   emptyWrap: {
     flex: 1,
     paddingHorizontal: spacing.xl,
