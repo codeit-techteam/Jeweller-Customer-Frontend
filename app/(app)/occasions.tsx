@@ -16,26 +16,25 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { CartNavIcon } from '@/lib/components/common/CartNavIcon';
 import { RemoteImage } from '@/lib/components/common/RemoteImage';
 import { pushCollection } from '@/lib/navigation/collectionNavigation';
 import { pushProductDetails } from '@/lib/navigation/productNavigation';
 import { OCCASION_HERO_URI } from '@/lib/services/mock/imageUrls';
-import { fetchOccasionsUi, fetchTrendingProductsUi } from '@/lib/services/catalogApi';
+import { fetchOccasionsUi } from '@/lib/services/catalogApi';
+import { fetchProductsForCollection } from '@/lib/services/productCatalog';
 import { formatBoutiqueMeta } from '@/lib/utils/formatBoutiqueMeta';
+import { useCartStore } from '@/lib/stores/cartStore';
 import { BottomTabBar } from '@/src/components/navigation/BottomTabBar';
 import { fontSizes, radius, spacing } from '@/src/constants/theme';
 
 const BG = '#F7F7F7';
 const NAVY = '#0A1F44';
 const GOLD = '#C19D5F';
-const OCCASION_FALLBACK = [
-  { id: 'fallback-wedding', title: 'Wedding', image: 'https://images.unsplash.com/photo-1617038220319-276d3cfab638?w=1000&q=88&auto=format&fit=crop', collectionSlug: 'wedding' },
-  { id: 'fallback-anniversary', title: 'Anniversary', image: 'https://images.unsplash.com/photo-1605100804763-247f67b3557e?w=1000&q=88&auto=format&fit=crop', collectionSlug: 'anniversary' },
-  { id: 'fallback-engagement', title: 'Engagement', image: 'https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?w=1000&q=88&auto=format&fit=crop', collectionSlug: 'engagement' },
-  { id: 'fallback-festive', title: 'Festive', image: 'https://images.unsplash.com/photo-1611652022419-a9419f74343d?w=1000&q=88&auto=format&fit=crop', collectionSlug: 'festive' },
-  { id: 'fallback-daily-wear', title: 'Daily Wear', image: 'https://images.unsplash.com/photo-1596944924616-7b38e7cfac36?w=1000&q=88&auto=format&fit=crop', collectionSlug: 'everyday' },
-  { id: 'fallback-birthday', title: 'Birthday', image: 'https://images.unsplash.com/photo-1602751584552-8ba73aad10e1?w=1000&q=88&auto=format&fit=crop', collectionSlug: 'birthday' },
-];
+
+function formatInrPrice(value: number): string {
+  return `₹${Number(value).toLocaleString('en-IN')}`;
+}
 
 export default function OccasionsScreen() {
   const [occasionCollections, setOccasionCollections] = React.useState<Array<{ id: string; title: string; image: string | null; collectionSlug: string }>>([]);
@@ -56,9 +55,9 @@ export default function OccasionsScreen() {
     let mounted = true;
     (async () => {
       try {
-        const [occasionsResult, trendingResult] = await Promise.allSettled([
+        const [occasionsResult, weddingProductsResult] = await Promise.allSettled([
           fetchOccasionsUi(),
-          fetchTrendingProductsUi(),
+          fetchProductsForCollection('wedding', { force: true }),
         ]);
 
         if (!mounted) return;
@@ -73,21 +72,19 @@ export default function OccasionsScreen() {
               collectionSlug: item.collectionSlug,
             })),
           );
-          console.log('Occasions:', occasions.length);
         } else {
-          console.error('Failed to load occasions, using fallback', occasionsResult.reason);
-          setOccasionCollections(OCCASION_FALLBACK);
-          console.log('Occasions:', OCCASION_FALLBACK.length);
+          console.error('Failed to load occasions', occasionsResult.reason);
+          setOccasionCollections([]);
         }
 
-        if (trendingResult.status === 'fulfilled') {
-          const trending = trendingResult.value;
+        if (weddingProductsResult.status === 'fulfilled') {
+          const weddingProducts = weddingProductsResult.value;
           setTrendingInWedding(
-            trending.slice(0, 4).map((item) => ({
+            weddingProducts.slice(0, 4).map((item) => ({
               id: item.id,
-              title: item.title,
-              price: item.price,
-              subtitle: item.description,
+              title: item.name,
+              price: formatInrPrice(item.price),
+              subtitle: item.category,
               boutiqueLine:
                 typeof item.boutiqueName === 'string' && item.boutiqueName.trim()
                   ? formatBoutiqueMeta({
@@ -100,7 +97,7 @@ export default function OccasionsScreen() {
             })),
           );
         } else {
-          console.error('Failed to load trending products', trendingResult.reason);
+          console.error('Failed to load wedding collection products', weddingProductsResult.reason);
           setTrendingInWedding([]);
         }
       } finally {
@@ -115,6 +112,12 @@ export default function OccasionsScreen() {
     };
   }, []);
   const router = useRouter();
+  const cartCount = useCartStore((s) =>
+    s.items.reduce((acc, line) => acc + line.qty, 0),
+  );
+  const openCart = useCallback(() => {
+    router.push('/(app)/cart');
+  }, [router]);
   const { width } = useWindowDimensions();
 
   const tileW = useMemo(() => Math.max(0, (width - 16 * 2 - 12) / 2), [width]);
@@ -237,9 +240,14 @@ export default function OccasionsScreen() {
             />
           </Pressable>
           <Text style={styles.screenTitle}>Shop by Occasion</Text>
-          <Pressable onPress={() => router.push('/(app)/cart')} hitSlop={12} style={styles.topIcon}>
-            <MaterialIcons name="shopping-bag" size={22} color={NAVY} />
-          </Pressable>
+          <CartNavIcon
+            variant="plain"
+            count={cartCount}
+            onPress={openCart}
+            size={22}
+            iconColor={NAVY}
+            style={styles.topIcon}
+          />
         </View>
 
         <FlatList

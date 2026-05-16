@@ -106,7 +106,9 @@ export function filterListingCatalog(
   f: ProductListingFilterState,
 ): CategoryProduct[] {
   const cat = normalizeCategoryParam(category);
-  let list = cat === 'ALL' ? [...products] : products.filter((p) => p.category === cat);
+  const norm = (s: string) => normalizeCategoryParam(s);
+  let list =
+    cat === "ALL" ? [...products] : products.filter((p) => norm(p.category) === cat);
 
   list = list.filter((p) => p.price >= f.priceMin && p.price <= f.priceMax);
 
@@ -116,7 +118,9 @@ export function filterListingCatalog(
   }
 
   if (f.types.length > 0) {
-    list = list.filter((p) => f.types.includes(p.category));
+    list = list.filter((p) =>
+      f.types.some((t) => norm(p.category) === norm(t)),
+    );
   }
 
   const minRating = f.minRating;

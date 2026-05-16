@@ -8,6 +8,9 @@ export type SearchSpotlightProduct = {
   imageTint: string;
   /** Product-style Unsplash URI for card */
   imageUri: string;
+  boutiqueName?: string | null;
+  boutiqueRating?: number | null;
+  boutiqueVerified?: boolean;
 };
 
 export type TrendingSearchChip = {

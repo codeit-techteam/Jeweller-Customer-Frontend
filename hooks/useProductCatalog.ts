@@ -147,9 +147,51 @@ type SearchState = {
   error: string | null;
 };
 
-const SEARCH_DEBOUNCE_MS = 250;
+const SEARCH_DEBOUNCE_MS = 300;
 
-export function useProductSearch(query: string): SearchState {
+const FILTER_CACHE_TTL_MS = 45_000;
+const FILTER_CACHE_MAX = 48;
+
+type FilterCacheEntry = {
+  at: number;
+  rows: CatalogProduct[];
+  productRef: CatalogProduct[];
+};
+
+const filterCatalogCache = new Map<string, FilterCacheEntry>();
+
+function filterCatalogCached(
+  products: CatalogProduct[],
+  trimmed: string,
+): CatalogProduct[] {
+  const key = trimmed.toLowerCase();
+  const now = Date.now();
+  const hit = filterCatalogCache.get(key);
+  if (
+    hit &&
+    hit.productRef === products &&
+    now - hit.at < FILTER_CACHE_TTL_MS
+  ) {
+    return hit.rows;
+  }
+  const rows = filterCatalog(products, trimmed);
+  filterCatalogCache.set(key, { at: now, rows, productRef: products });
+  while (filterCatalogCache.size > FILTER_CACHE_MAX) {
+    const oldest = filterCatalogCache.keys().next().value as string | undefined;
+    if (oldest === undefined) break;
+    filterCatalogCache.delete(oldest);
+  }
+  return rows;
+}
+
+export type ProductSearchState = SearchState & {
+  debouncedQuery: string;
+  /** True while the debounced query has not caught up to the latest input. */
+  isDebouncing: boolean;
+  products: CatalogProduct[];
+};
+
+export function useProductSearch(query: string): ProductSearchState {
   const { products, loading: catalogLoading, error } = useProductCatalog();
   const [debounced, setDebounced] = useState(query);
 
@@ -161,12 +203,20 @@ export function useProductSearch(query: string): SearchState {
   const results = useMemo(() => {
     const trimmed = debounced.trim();
     if (!trimmed) return [];
-    return filterCatalog(products, trimmed);
+    return filterCatalogCached(products, trimmed);
   }, [debounced, products]);
+
+  const trimmedQuery = query.trim();
+  const trimmedDebounced = debounced.trim();
+  const isDebouncing =
+    trimmedQuery.length > 0 && trimmedQuery !== trimmedDebounced;
 
   return {
     results,
     loading: catalogLoading && products.length === 0,
     error,
+    debouncedQuery: debounced,
+    isDebouncing,
+    products,
   };
 }

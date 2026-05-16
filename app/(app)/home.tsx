@@ -36,22 +36,28 @@ import {
 } from "@/lib/components/common/ListingProductCard";
 import { RemoteImage } from "@/lib/components/common/RemoteImage";
 import { SearchBar } from "@/lib/components/common/SearchBar";
+import { SEARCH_ROTATING_PLACEHOLDERS } from "@/lib/constants/searchRotatingPlaceholders";
+import { CartNavIcon } from "@/lib/components/common/CartNavIcon";
 import { WishlistNavIcon } from "@/lib/components/common/WishlistNavIcon";
 import { FeaturedBoutiqueCard } from "@/lib/components/home/FeaturedBoutiqueCard";
+import { FeaturedSectionRail } from "@/lib/components/home/FeaturedSectionRail";
 import { pushCollection } from "@/lib/navigation/collectionNavigation";
 import { pushProductDetails } from "@/lib/navigation/productNavigation";
 import {
     fetchBoutiquesUi,
     fetchCategoriesUi,
     fetchCollectionsUi,
+    fetchFeaturedSectionsUi,
     fetchOccasionsUi,
     fetchTrendingProductsUi,
+    type FeaturedSectionUi,
 } from "@/lib/services/catalogApi";
 import {
     HERO_JEWELLERY_URI,
     PLACEHOLDER_IMAGE_URI,
 } from "@/lib/services/mock/imageUrls";
 import { snapshotFromListingFields } from "@/lib/services/mock/wishlist";
+import { useCartStore } from "@/lib/stores/cartStore";
 import { useWishlistStore } from "@/lib/stores/wishlistStore";
 import { ApiError } from "@/services/api";
 import { applyUserLocationToBoutiqueList } from "@/services/boutique.service";
@@ -125,7 +131,10 @@ function HomeContent() {
     }>
   >([]);
   const [collectionsData, setCollectionsData] = useState<
-    Array<{ id: string; title: string }>
+    Array<{ id: string; title: string; slug: string }>
+  >([]);
+  const [featuredSections, setFeaturedSections] = useState<
+    FeaturedSectionUi[]
   >([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -145,10 +154,14 @@ function HomeContent() {
   const wishIds = useWishlistStore((s) => s.ids);
   const wishlistCount = useWishlistStore((s) => s.count);
   const toggleWishlist = useWishlistStore((s) => s.toggle);
+  const cartCount = useCartStore((s) =>
+    s.items.reduce((acc, line) => acc + line.qty, 0),
+  );
   const openWishlist = useCallback(
     () => router.push("/(app)/wishlist"),
     [router],
   );
+  const openCart = useCallback(() => router.push("/(app)/cart"), [router]);
   const { width: winW } = useWindowDimensions();
   /** Scroll content uses paddingHorizontal: 16; four columns with sm gaps between. */
   const categoryColW = useMemo(
@@ -167,14 +180,26 @@ function HomeContent() {
       setErrorMessage(null);
     }
     try {
-      const [categories, boutiques, trending, occasions, collections] =
-        await Promise.all([
-          fetchCategoriesUi(),
-          fetchBoutiquesUi(),
-          fetchTrendingProductsUi(),
-          fetchOccasionsUi(),
-          fetchCollectionsUi(),
-        ]);
+      const [
+        categories,
+        boutiques,
+        trending,
+        occasions,
+        trendingCollections,
+        featured,
+      ] = await Promise.all([
+        fetchCategoriesUi(),
+        fetchBoutiquesUi(),
+        fetchTrendingProductsUi(),
+        fetchOccasionsUi(),
+        fetchCollectionsUi({ trending: true }),
+        fetchFeaturedSectionsUi(),
+      ]);
+      // Fall back to all active collections when no rows are flagged trending yet
+      const collections =
+        trendingCollections.length > 0
+          ? trendingCollections
+          : await fetchCollectionsUi();
       setHomeCategoryPreview(categories.slice(0, 4).map((item) => item.name));
       setHomeCategoryImageByName(
         categories.reduce<Record<string, string>>((acc, item) => {
@@ -186,7 +211,18 @@ function HomeContent() {
       setHomeTrendingPreview(trending.slice(0, 4));
       setOccasionData(occasions);
       setCollectionsData(
-        collections.map((item) => ({ id: item.id, title: item.title })),
+        collections.map((item) => ({
+          id: item.id,
+          title: item.title,
+          slug: item.slug,
+        })),
+      );
+      setFeaturedSections(
+        featured.filter(
+          (section) =>
+            section.products.length > 0 &&
+            section.slug?.trim().toLowerCase() !== "trending-now",
+        ),
       );
       setErrorMessage(null);
     } catch (error) {
@@ -412,27 +448,20 @@ function HomeContent() {
             borderColor={styles.iconButton.borderColor as string}
           />
 
-          <Pressable
-            accessibilityRole="button"
-            hitSlop={spacing.sm}
-            style={({ pressed }) => [
-              styles.iconButton,
-              pressed && styles.iconButtonPressed,
-            ]}
-            onPress={() => router.push("/(app)/cart")}
-          >
-            <MaterialIcons
-              name="shopping-bag"
-              size={24}
-              color={styles.icon.color}
-            />
-          </Pressable>
+          <CartNavIcon
+            count={cartCount}
+            onPress={openCart}
+            iconColor={styles.icon.color}
+            bgColor={styles.iconButton.backgroundColor as string}
+            borderColor={styles.iconButton.borderColor as string}
+          />
         </View>
       </View>
 
       <View style={styles.searchBarWrap}>
         <SearchBar
           placeholder="Search by Category, Occasion, Relationship"
+          rotatingPlaceholders={SEARCH_ROTATING_PLACEHOLDERS}
           onPress={() => router.push("/search")}
         />
       </View>
@@ -490,7 +519,7 @@ function HomeContent() {
               key={item.id}
               accessibilityRole="button"
               accessibilityLabel={item.title}
-              onPress={navigateToCategoryList}
+              onPress={() => pushCollection(router, item.slug)}
               style={styles.collectionChip}
             >
               <Text style={styles.collectionChipText}>{item.title}</Text>
@@ -691,6 +720,12 @@ function HomeContent() {
           }}
         />
       )}
+
+      {!loading
+        ? featuredSections.map((section) => (
+            <FeaturedSectionRail key={section.id} section={section} />
+          ))
+        : null}
 
       <View style={styles.promiseSection}>
         <Text style={styles.promiseHeading}>The Luxe & Co Promise</Text>

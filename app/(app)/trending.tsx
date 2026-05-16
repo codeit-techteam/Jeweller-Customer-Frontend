@@ -5,6 +5,7 @@ import React, { useCallback, useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { CartNavIcon } from "@/lib/components/common/CartNavIcon";
 import {
     ListingProductCard,
     type ListingProductCardItem,
@@ -13,6 +14,7 @@ import { SectionHeader } from "@/lib/components/common/SectionHeader";
 import { pushProductDetails } from "@/lib/navigation/productNavigation";
 import { fetchTrendingProductsUi } from "@/lib/services/catalogApi";
 import { snapshotFromListingFields } from "@/lib/services/mock/wishlist";
+import { useCartStore } from "@/lib/stores/cartStore";
 import { useWishlistStore } from "@/lib/stores/wishlistStore";
 import { PLACEHOLDER_IMAGE_URI } from "@/lib/services/mock/imageUrls";
 import { BottomTabBar } from "@/src/components/navigation/BottomTabBar";
@@ -41,6 +43,10 @@ export default function TrendingScreen() {
   const router = useRouter();
   const wishIds = useWishlistStore((s) => s.ids);
   const toggleWishlist = useWishlistStore((s) => s.toggle);
+  const cartCount = useCartStore((s) =>
+    s.items.reduce((acc, line) => acc + line.qty, 0),
+  );
+  const openCart = useCallback(() => router.push("/(app)/cart"), [router]);
   const [trendingProducts, setTrendingProducts] = useState<TrendingProduct[]>(
     [],
   );
@@ -107,14 +113,14 @@ export default function TrendingScreen() {
             <MaterialIcons name="arrow-back" size={22} color="#0f172a" />
           </Pressable>
           <Text style={styles.topTitle}>Trending Now</Text>
-          <Pressable
-            accessibilityRole="button"
-            hitSlop={12}
-            onPress={() => router.push("/(app)/cart")}
+          <CartNavIcon
+            variant="plain"
+            count={cartCount}
+            onPress={openCart}
+            size={22}
+            iconColor="#0f172a"
             style={styles.topIcon}
-          >
-            <MaterialIcons name="shopping-bag" size={22} color="#0f172a" />
-          </Pressable>
+          />
         </View>
 
         <FlatList

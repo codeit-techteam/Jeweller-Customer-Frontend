@@ -2,12 +2,23 @@ import {
     ApiError,
     getBoutiqueById,
     getCategories,
+    getCollectionBySlug,
     getCollections,
+    getDiscoverFeaturedProducts,
+    getFeaturedSections,
+    getGiftCollections,
+    getMenuCategories,
     getOccasions,
+    getOffers,
     getProductById,
     getProducts,
-    getTrendingProducts,
+    getRelationshipSections,
 } from "@/services/api";
+import { PLACEHOLDER_IMAGE_URI } from "@/lib/services/mock/imageUrls";
+import {
+  trendingSearches,
+  type TrendingSearchChip,
+} from "@/lib/services/mock/search";
 import { fetchBoutiques } from "@/services/boutique.service";
 import type { UserCoords } from "@/services/boutique.service";
 
@@ -168,7 +179,7 @@ function sizeSectionLabelFromCategory(category: string): string {
   return "SIZE";
 }
 
-function inferMetalFromName(name: string): string {
+export function inferMetalFromName(name: string): string {
   if (/platinum/i.test(name)) return "Platinum";
   if (/silver/i.test(name)) return "Silver";
   if (/rose gold/i.test(name)) return "Rose Gold";
@@ -319,7 +330,18 @@ function toMediaImages(row: GalleryRow): ProductImage[] {
   return [{ tint: "#d4e4f0", uri: row?.image ?? undefined, isVideo: false }];
 }
 
-export async function fetchCategoriesUi() {
+export type CategoryUi = {
+  id: string;
+  name: string;
+  image: string | null;
+  slug: string | null;
+  subtitle?: string | null;
+  /** Admin-defined product order for this category, sourced from the
+   * `category_products` junction (sort_order ascending). */
+  productIds: string[];
+};
+
+export async function fetchCategoriesUi(): Promise<CategoryUi[]> {
   if (__DEV__) {
     console.log("Fetching categories...");
   }
@@ -328,6 +350,14 @@ export async function fetchCategoriesUi() {
     id: row.id,
     name: row.name,
     image: row.image ?? null,
+    slug:
+      row.slug ?? row.name.toLowerCase().replace(/\s+/g, "-"),
+    subtitle: row.subtitle ?? null,
+    productIds: Array.isArray(row.product_ids)
+      ? row.product_ids
+      : Array.isArray(row.products)
+        ? row.products.map((item) => item.id)
+        : [],
   }));
 }
 
@@ -336,29 +366,273 @@ export async function fetchBoutiquesUi(userLocation?: UserCoords | null) {
   return fetchBoutiques(userLocation ?? undefined);
 }
 
-export async function fetchCollectionsUi() {
-  if (__DEV__) console.log("Fetching collections...");
-  const rows = await getCollections();
-  return rows.map((row) => ({
+export type CollectionUi = {
+  id: string;
+  title: string;
+  subtitle: string;
+  description: string | null;
+  image: string | null;
+  bannerImage: string | null;
+  slug: string;
+  isTrending: boolean;
+  isFeatured: boolean;
+  productIds: string[];
+};
+
+function toCollectionUi(row: Awaited<ReturnType<typeof getCollections>>[number]): CollectionUi {
+  return {
     id: row.id,
     title: row.title,
     subtitle: row.subtitle ?? "",
+    description: row.description ?? null,
     image: row.image ?? null,
+    bannerImage: row.banner_image ?? null,
     slug: row.slug ?? row.title.toLowerCase().replace(/\s+/g, "-"),
-  }));
+    isTrending: Boolean(row.is_trending),
+    isFeatured: Boolean(row.is_featured),
+    productIds: Array.isArray(row.products)
+      ? row.products.map((item) => item.id)
+      : [],
+  };
 }
 
-export async function fetchOccasionsUi() {
+export async function fetchCollectionsUi(opts?: {
+  trending?: boolean;
+  featured?: boolean;
+}): Promise<CollectionUi[]> {
+  if (__DEV__) console.log("Fetching collections...", opts);
+  const rows = await getCollections(opts);
+  return rows.map(toCollectionUi);
+}
+
+export async function fetchCollectionBySlugUi(
+  slug: string,
+): Promise<CollectionUi | null> {
+  if (!slug?.trim()) return null;
+  try {
+    const row = await getCollectionBySlug(slug.trim().toLowerCase());
+    return row ? toCollectionUi(row) : null;
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+export type OccasionUi = {
+  id: string;
+  title: string;
+  subtitle: string;
+  description: string | null;
+  image: string | null;
+  collectionSlug: string;
+  productIds: string[];
+};
+
+export async function fetchOccasionsUi(): Promise<OccasionUi[]> {
   if (__DEV__) console.log("Fetching occasions...");
   const rows = await getOccasions();
   return rows.map((row) => ({
     id: row.id,
     title: row.title,
     subtitle: row.subtitle ?? "",
+    description: row.description ?? null,
     image: row.image ?? null,
     collectionSlug:
       row.collection_slug ?? row.title.toLowerCase().replace(/\s+/g, "-"),
+    productIds: Array.isArray(row.products)
+      ? row.products.map((item) => item.id)
+      : [],
   }));
+}
+
+export type MenuCategoryUi = {
+  id: string;
+  title: string;
+  slug: string;
+  collectionSlug: string;
+  icon: string | null;
+  image: string | null;
+  badge: string | null;
+  subtitle: string | null;
+  productIds: string[];
+};
+
+export async function fetchMenuCategoriesUi(): Promise<MenuCategoryUi[]> {
+  if (__DEV__) console.log("Fetching menu categories...");
+  try {
+    const rows = await getMenuCategories();
+    return rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      slug: row.slug ?? row.title.toLowerCase().replace(/\s+/g, "-"),
+      collectionSlug:
+        row.collection_slug ??
+        row.slug ??
+        row.title.toLowerCase().replace(/\s+/g, "-"),
+      icon: row.icon ?? null,
+      image: row.image ?? null,
+      badge: row.badge ?? null,
+      subtitle: row.subtitle ?? null,
+      productIds: Array.isArray(row.products)
+        ? row.products.map((item) => item.id)
+        : [],
+    }));
+  } catch (error) {
+    if (error instanceof ApiError) {
+      console.warn("[fetchMenuCategoriesUi] falling back", error.message);
+      return [];
+    }
+    throw error;
+  }
+}
+
+export type FeaturedSectionUi = {
+  id: string;
+  title: string;
+  slug: string;
+  subtitle: string | null;
+  description: string | null;
+  bannerImage: string | null;
+  layout: string;
+  products: Array<{
+    id: string;
+    name: string;
+    price: number;
+    image: string | null;
+    discountPercentage: number | null;
+  }>;
+};
+
+export async function fetchFeaturedSectionsUi(): Promise<FeaturedSectionUi[]> {
+  if (__DEV__) console.log("Fetching featured sections...");
+  try {
+    const rows = await getFeaturedSections();
+    return rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      slug: row.slug ?? row.title.toLowerCase().replace(/\s+/g, "-"),
+      subtitle: row.subtitle ?? null,
+      description: row.description ?? null,
+      bannerImage: row.banner_image ?? null,
+      layout: row.layout ?? "carousel",
+      products: (row.products ?? []).map((product) => ({
+        id: product.id,
+        name: product.name,
+        price: Number(product.price ?? 0),
+        image: product.image ?? null,
+        discountPercentage:
+          product.discount_percentage != null
+            ? Number(product.discount_percentage)
+            : null,
+      })),
+    }));
+  } catch (error) {
+    if (error instanceof ApiError) {
+      console.warn("[fetchFeaturedSectionsUi] failed", error.message);
+      return [];
+    }
+    throw error;
+  }
+}
+
+export type OfferUi = {
+  id: string;
+  title: string;
+  slug: string;
+  subtitle: string | null;
+  description: string | null;
+  discountText: string | null;
+  badge: string | null;
+  image: string | null;
+  bannerImage: string | null;
+  ctaLabel: string | null;
+  ctaTarget: string | null;
+  startsAt: string | null;
+  expiresAt: string | null;
+  productIds: string[];
+  collections: Array<{
+    id: string;
+    title: string | null;
+    slug: string | null;
+    image: string | null;
+  }>;
+};
+
+export async function fetchOffersUi(): Promise<OfferUi[]> {
+  if (__DEV__) console.log("Fetching offers...");
+  try {
+    const rows = await getOffers();
+    return rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      slug: row.slug ?? row.title.toLowerCase().replace(/\s+/g, "-"),
+      subtitle: row.subtitle ?? null,
+      description: row.description ?? null,
+      discountText: row.discount_text ?? null,
+      badge: row.badge ?? null,
+      image: row.image ?? null,
+      bannerImage: row.banner_image ?? null,
+      ctaLabel: row.cta_label ?? null,
+      ctaTarget: row.cta_target ?? null,
+      startsAt: row.starts_at ?? null,
+      expiresAt: row.expires_at ?? null,
+      productIds: Array.isArray(row.products)
+        ? row.products.map((item) => item.id)
+        : [],
+      collections: Array.isArray(row.collections)
+        ? row.collections.map((collection) => ({
+            id: collection.id,
+            title: collection.title ?? null,
+            slug: collection.slug ?? null,
+            image: collection.image ?? null,
+          }))
+        : [],
+    }));
+  } catch (error) {
+    if (error instanceof ApiError) {
+      console.warn("[fetchOffersUi] failed", error.message);
+      return [];
+    }
+    throw error;
+  }
+}
+
+export type GiftCollectionUi = {
+  id: string;
+  title: string;
+  slug: string;
+  subtitle: string | null;
+  description: string | null;
+  image: string | null;
+  bannerImage: string | null;
+  productIds: string[];
+};
+
+export async function fetchGiftCollectionsUi(): Promise<GiftCollectionUi[]> {
+  if (__DEV__) console.log("Fetching gift collections...");
+  try {
+    const rows = await getGiftCollections();
+    return rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      slug: row.slug ?? row.title.toLowerCase().replace(/\s+/g, "-"),
+      subtitle: row.subtitle ?? null,
+      description: row.description ?? null,
+      image: row.image ?? null,
+      bannerImage: row.banner_image ?? null,
+      productIds: Array.isArray(row.products)
+        ? row.products.map((item) => item.id)
+        : [],
+    }));
+  } catch (error) {
+    if (error instanceof ApiError) {
+      console.warn("[fetchGiftCollectionsUi] failed", error.message);
+      return [];
+    }
+    throw error;
+  }
 }
 
 export async function fetchCategoryProductsUi() {
@@ -394,39 +668,126 @@ export async function fetchCategoryProductsUi() {
   });
 }
 
+export async function fetchRelationshipSectionsUi() {
+  if (__DEV__) console.log("Fetching relationship sections...");
+  try {
+    const rows = await getRelationshipSections();
+    return rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      subtitle: row.subtitle ?? null,
+      image: row.image ?? null,
+      collectionSlug: row.collection_slug?.trim() || null,
+      productIds: Array.isArray(row.product_ids)
+        ? row.product_ids
+        : Array.isArray(row.products)
+          ? row.products.map((item) => item.id)
+          : [],
+    }));
+  } catch (error) {
+    if (error instanceof ApiError) {
+      console.warn("[fetchRelationshipSectionsUi] failed", error.message);
+      return [];
+    }
+    throw error;
+  }
+}
+
+export async function fetchTrendingCollectionChipsUi(): Promise<
+  TrendingSearchChip[]
+> {
+  try {
+    const rows = await getCollections({ trending: true });
+    if (!rows.length) {
+      return trendingSearches;
+    }
+    return rows.slice(0, 8).map((row, index) => ({
+      id: row.id,
+      label: row.title ?? row.slug ?? "Trending",
+      variant: index === 0 ? ("vday" as const) : ("default" as const),
+    }));
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return trendingSearches;
+    }
+    throw error;
+  }
+}
+
 export async function fetchTrendingProductsUi() {
-  if (__DEV__) console.log("Fetching trending products...");
-  const rows = await getTrendingProducts();
-  return rows.map((row, index) => {
-    const boutique = row.boutique ?? null;
-    const ratingRaw = boutique?.rating;
-    const ratingNumber = ratingRaw == null ? null : Number(ratingRaw);
-    const boutiqueRating =
-      ratingNumber != null && Number.isFinite(ratingNumber) && ratingNumber > 0
-        ? ratingNumber
-        : null;
-    return {
+  if (__DEV__) console.log("Fetching trending / Product right now…");
+
+  const mapDiscoverFeatured = (
+    rows: Awaited<ReturnType<typeof getDiscoverFeaturedProducts>>,
+  ) =>
+    rows.map((row, index) => ({
       id: row.id,
       title: row.name,
-      description: `${row.category?.name ?? "Fine Jewellery"} Collection`,
-      price: `₹${Number(row.price).toLocaleString("en-IN")}`,
-      imageTint: "#d4e4f0",
-      imageUri: resolveThumbnail(row) ?? undefined,
-      badge:
-        index % 3 === 0
-          ? "BESTSELLER"
-          : index % 3 === 1
-            ? "MOST LOVED"
-            : "TRENDING",
-      category: row.category?.name ?? "RINGS",
-      boutiqueId: boutique?.id ?? row.boutique_id ?? null,
-      boutiqueName: boutique?.name?.trim() ? boutique.name.trim() : null,
-      boutiqueRating,
-      boutiqueVerified: Boolean(
-        boutique?.is_verified ?? boutique?.verified ?? false,
-      ),
-    };
-  });
+      description:
+        (typeof row.description === "string" && row.description.trim()) ||
+        "Curated selection",
+      price: `₹ ${Number(row.price ?? 0).toLocaleString("en-IN")}`,
+      imageTint: index % 2 === 0 ? "#d4e4f0" : "#e8e4dc",
+      imageUri: row.image?.trim() ? row.image.trim() : PLACEHOLDER_IMAGE_URI,
+      category: "FEATURED",
+      boutiqueId: row.boutique?.id ?? null,
+      boutiqueName: row.boutique?.name ?? null,
+      boutiqueRating:
+        row.boutique?.rating != null && Number.isFinite(Number(row.boutique.rating))
+          ? Number(row.boutique.rating)
+          : null,
+      boutiqueVerified: Boolean(row.boutique?.verified),
+    }));
+
+  try {
+    const discoverRows = await getDiscoverFeaturedProducts();
+    if (discoverRows.length > 0) {
+      return mapDiscoverFeatured(discoverRows);
+    }
+  } catch (error) {
+    if (error instanceof ApiError) {
+      if (__DEV__) {
+        console.warn(
+          "[fetchTrendingProductsUi] discover featured empty or failed, trying Featured Sections",
+          error.message,
+        );
+      }
+    } else {
+      throw error;
+    }
+  }
+
+  try {
+    const sections = await getFeaturedSections();
+    const section = sections.find(
+      (row) => (row.slug ?? "").trim().toLowerCase() === "trending-now",
+    );
+    const products = section?.products ?? [];
+    if (!products.length) return [];
+
+    return products.map((row, index) => ({
+      id: row.id,
+      title: row.name,
+      description:
+        section?.subtitle?.trim() ||
+        section?.description?.trim() ||
+        "Curated by Luxe & Co",
+      price: `₹ ${Number(row.price ?? 0).toLocaleString("en-IN")}`,
+      imageTint: index % 2 === 0 ? "#d4e4f0" : "#e8e4dc",
+      imageUri: row.image?.trim() ? row.image.trim() : PLACEHOLDER_IMAGE_URI,
+      category: "FEATURED",
+      boutiqueId: null as string | null,
+      boutiqueName: null as string | null,
+      boutiqueRating: null as number | null,
+      boutiqueVerified: false,
+    }));
+  } catch (error) {
+    if (error instanceof ApiError) {
+      console.warn("[fetchTrendingProductsUi] featured sections failed", error.message);
+      return [];
+    }
+    throw error;
+  }
 }
 
 export async function fetchProductDetailUi(

@@ -1,6 +1,6 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { LinearGradient } from "expo-linear-gradient";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useMemo, useState } from "react";
 import {
     ActivityIndicator,
@@ -14,10 +14,14 @@ import {
     Text,
     View,
 } from "react-native";
+import Animated, { FadeIn } from "react-native-reanimated";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ProductSkeletonLoader } from "@/components/loaders";
+import { useAuth } from "@/context/AuthContext";
 import { useProductSearch } from "@/hooks/useProductCatalog";
+import { pushCollection } from "@/lib/navigation/collectionNavigation";
 import { pushProductDetails } from "@/lib/navigation/productNavigation";
 import { CategoryCard } from "@/lib/components/common/CategoryCard";
 import {
@@ -29,17 +33,28 @@ import { ProductCard } from "@/lib/components/common/ProductCard";
 import { RemoteImage } from "@/lib/components/common/RemoteImage";
 import { SearchBar } from "@/lib/components/common/SearchBar";
 import { SearchItem } from "@/lib/components/common/SearchItem";
+import {
+    fetchCategoriesUi,
+    fetchCollectionsUi,
+    fetchOccasionsUi,
+    fetchRelationshipSectionsUi,
+    fetchTrendingCollectionChipsUi,
+    fetchTrendingProductsUi,
+} from "@/lib/services/catalogApi";
+import { SEARCH_ROTATING_PLACEHOLDERS } from "@/lib/constants/searchRotatingPlaceholders";
+import {
+    buildSearchSuggestions,
+    type SearchSuggestion,
+    type SearchSuggestionKind,
+} from "@/lib/services/buildSearchSuggestions";
 import { categoryImageUri } from "@/lib/services/mock/imageUrls";
 import {
-    recentSearches as initialRecent,
     searchPlaceholder,
-    searchSpotlightProducts,
-    shopByCategoryIcons,
-    shopByOccasion,
-    shopByOccasionFallback,
-    shopByRelationship,
     trendingSearches,
+    type CategoryIconItem,
     type OccasionCardItem,
+    type TrendingSearchChip,
+    type SearchSpotlightProduct,
 } from "@/lib/services/mock/search";
 import type { CatalogProduct } from "@/lib/services/productCatalog";
 import {
@@ -47,9 +62,14 @@ import {
     snapshotFromSpotlight,
 } from "@/lib/services/mock/wishlist";
 import {
-    catalogProductToSearchable,
     formatCategoryLabel,
 } from "@/lib/services/searchCatalog";
+import {
+    addSearchHistory,
+    getSearchHistory,
+    removeSearchHistoryEntry,
+} from "@/services/api";
+import { normalizeSearchKeyword } from "@/lib/utils/normalizeSearchKeyword";
 import { useWishlistStore } from "@/lib/stores/wishlistStore";
 import { BottomTabBar } from "@/src/components/navigation/BottomTabBar";
 import { fontSizes, spacing } from "@/src/constants/theme";
@@ -64,39 +84,10 @@ const OCCASION_CARD_W = SCREEN_W - H_PADDING * 2;
 const OCCASION_CARD_H = 200;
 
 /** Cap the recent-searches memory (matches Amazon-style chip rail). */
-const MAX_RECENT = 5;
-
-/** Last-resort fallback to guarantee non-empty section */
-const DEFAULT_SEARCH_OCCASIONS: OccasionCardItem[] = [
-  {
-    id: "occ-fb-1",
-    title: "Wedding",
-    imageUri:
-      "https://images.unsplash.com/photo-1606800052052-a08af7148866?w=1200&q=85&auto=format&fit=crop",
-    categoryParam: "Wedding",
-  },
-  {
-    id: "occ-fb-2",
-    title: "Anniversary",
-    imageUri:
-      "https://images.unsplash.com/photo-1617038260897-41a1f14a8ca0?w=1200&q=85&auto=format&fit=crop",
-    categoryParam: "Anniversary",
-  },
-  {
-    id: "occ-fb-3",
-    title: "Engagement",
-    imageUri:
-      "https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?w=1200&q=85&auto=format&fit=crop",
-    categoryParam: "Engagement",
-  },
-  {
-    id: "occ-fb-4",
-    title: "Festive",
-    imageUri:
-      "https://images.unsplash.com/photo-1627293509201-cd0c780043d3?w=1200&q=85&auto=format&fit=crop",
-    categoryParam: "Festive",
-  },
-];
+const MAX_RECENT = 8;
+const RECENT_LOCAL_KEY = "discover_recent_searches_v1";
+/** Do not record very short partial queries as completed searches. */
+const MIN_RECENT_KEYWORD_LEN = 3;
 
 const OCCASION_SUBTITLES: Record<string, string> = {
   Wedding: "Timeless pieces for the big day",
@@ -105,11 +96,45 @@ const OCCASION_SUBTITLES: Record<string, string> = {
   Festive: "Radiance for every ritual",
 };
 
-const RELATIONSHIP_IMAGES: Record<string, string> = {
-  r1: categoryImageUri("NECKLACES"),
-  r2: categoryImageUri("RINGS"),
-  r3: categoryImageUri("EARRINGS"),
+type OccasionNavCard = OccasionCardItem & {
+  collectionSlug: string;
+  lineSubtitle: string;
 };
+
+type RelationshipNavCard = {
+  id: string;
+  title: string;
+  subtitle: string;
+  imageUri: string;
+  collectionSlug: string | null;
+  productIds: string[];
+};
+
+type RecentSearchEntry = {
+  id?: string;
+  keyword: string;
+};
+
+function suggestionMaterialIcon(
+  kind: SearchSuggestionKind,
+): React.ComponentProps<typeof MaterialIcons>["name"] {
+  switch (kind) {
+    case "product":
+      return "local-mall";
+    case "category":
+      return "category";
+    case "occasion":
+      return "event";
+    case "collection":
+      return "layers";
+    case "trending_chip":
+      return "trending-up";
+    case "relationship_section":
+      return "favorite-border";
+    default:
+      return "search";
+  }
+}
 
 function toListingCardItem(p: CatalogProduct): ListingProductCardItem {
   const priceLabel =
@@ -132,30 +157,252 @@ function toListingCardItem(p: CatalogProduct): ListingProductCardItem {
 
 export default function SearchScreen() {
   const router = useRouter();
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
+
   const [query, setQuery] = useState("");
-  const [recent, setRecent] = useState<string[]>(() => [...initialRecent]);
+  const [recent, setRecent] = useState<RecentSearchEntry[]>([]);
+  const [trendingChips, setTrendingChips] = useState<TrendingSearchChip[]>([]);
   const wishIds = useWishlistStore((s) => s.ids);
   const toggleWishlist = useWishlistStore((s) => s.toggle);
 
-  const { results, loading: searchLoading } = useProductSearch(query);
+  const {
+    results,
+    loading: searchLoading,
+    debouncedQuery,
+    isDebouncing,
+  } = useProductSearch(query);
 
   const trimmedQuery = query.trim();
   const isSearching = trimmedQuery.length > 0;
   const showEmptyState = isSearching && !searchLoading && results.length === 0;
 
-  const shopOccasionItems = useMemo((): OccasionCardItem[] => {
-    const primary =
-      shopByOccasion.length > 0 ? shopByOccasion : shopByOccasionFallback;
-    return primary.length > 0 ? primary : DEFAULT_SEARCH_OCCASIONS;
+  const [spotlightProducts, setSpotlightProducts] = useState<
+    SearchSpotlightProduct[]
+  >([]);
+  const [occasionCards, setOccasionCards] = useState<OccasionNavCard[]>([]);
+  const [categoryIcons, setCategoryIcons] = useState<CategoryIconItem[]>([]);
+  const [relationshipCards, setRelationshipCards] = useState<
+    RelationshipNavCard[]
+  >([]);
+  const [collectionsList, setCollectionsList] = useState<
+    { id: string; title: string; slug: string }[]
+  >([]);
+
+  const loadRecents = useCallback(async () => {
+    if (userId) {
+      try {
+        const rows = await getSearchHistory(userId);
+        setRecent(
+          rows
+            .map((row) => ({
+              id: row.id,
+              keyword: normalizeSearchKeyword(row.keyword),
+            }))
+            .filter((e) => e.keyword.length >= MIN_RECENT_KEYWORD_LEN),
+        );
+        return;
+      } catch {
+        /* fall through to local */
+      }
+    }
+    try {
+      const raw = await AsyncStorage.getItem(RECENT_LOCAL_KEY);
+      const parsed = raw ? (JSON.parse(raw) as unknown) : null;
+      if (Array.isArray(parsed)) {
+        const keywords = parsed
+          .map((entry) =>
+            typeof entry === "string"
+              ? normalizeSearchKeyword(entry)
+              : entry &&
+                  typeof entry === "object" &&
+                  "keyword" in entry &&
+                  typeof (entry as { keyword?: unknown }).keyword === "string"
+                ? normalizeSearchKeyword(
+                    (entry as { keyword: string }).keyword,
+                  )
+                : "",
+          )
+          .filter((k) => k.length >= MIN_RECENT_KEYWORD_LEN);
+        const deduped: RecentSearchEntry[] = [];
+        const seen = new Set<string>();
+        for (const raw of keywords) {
+          const keyword = normalizeSearchKeyword(raw);
+          if (keyword.length < MIN_RECENT_KEYWORD_LEN) continue;
+          const k = keyword.toLowerCase();
+          if (seen.has(k)) continue;
+          seen.add(k);
+          deduped.push({ keyword });
+          if (deduped.length >= MAX_RECENT) break;
+        }
+        setRecent(deduped);
+        return;
+      }
+    } catch {
+      /* ignore */
+    }
+    setRecent([]);
+  }, [userId]);
+
+  const persistLocalRecents = useCallback(async (entries: RecentSearchEntry[]) => {
+    try {
+      await AsyncStorage.setItem(
+        RECENT_LOCAL_KEY,
+        JSON.stringify(entries.map((e) => e.keyword)),
+      );
+    } catch {
+      /* ignore */
+    }
   }, []);
 
-  const addRecentSearch = useCallback((text: string) => {
-    const label = text.trim();
-    if (!label) return;
-    setRecent((prev) =>
-      [label, ...prev.filter((i) => i !== label)].slice(0, MAX_RECENT),
-    );
+  const loadDiscoverContent = useCallback(async () => {
+    const [
+      spotRes,
+      occRes,
+      catRes,
+      relRes,
+      chipRes,
+      colRes,
+    ] = await Promise.allSettled([
+      fetchTrendingProductsUi(),
+      fetchOccasionsUi(),
+      fetchCategoriesUi(),
+      fetchRelationshipSectionsUi(),
+      fetchTrendingCollectionChipsUi(),
+      fetchCollectionsUi(),
+    ]);
+
+    if (spotRes.status === "fulfilled") {
+      setSpotlightProducts(
+        spotRes.value.map((row) => ({
+          id: row.id,
+          title: row.title,
+          description: row.description,
+          price: row.price,
+          imageUri: row.imageUri ?? "",
+          imageTint: row.imageTint,
+        })),
+      );
+    } else {
+      setSpotlightProducts([]);
+    }
+
+    if (occRes.status === "fulfilled") {
+      setOccasionCards(
+        occRes.value.map((row) => {
+          const slug = row.collectionSlug.trim();
+          return {
+            id: row.id,
+            title: row.title,
+            imageUri:
+              row.image?.trim() ||
+              categoryImageUri(row.title.toUpperCase()),
+            categoryParam: slug,
+            collectionSlug: slug,
+            lineSubtitle:
+              row.subtitle?.trim() ||
+              OCCASION_SUBTITLES[row.title] ||
+              "Explore the edit",
+          };
+        }),
+      );
+    } else {
+      setOccasionCards([]);
+    }
+
+    if (catRes.status === "fulfilled") {
+      setCategoryIcons(
+        catRes.value.map((row) => ({
+          id: row.id,
+          label: row.name,
+          categoryParam: row.name,
+          imageUri:
+            row.image?.trim() ||
+            categoryImageUri(row.name.toUpperCase()),
+        })),
+      );
+    } else {
+      setCategoryIcons([]);
+    }
+
+    if (relRes.status === "fulfilled") {
+      setRelationshipCards(
+        relRes.value.map((row) => ({
+          id: row.id,
+          title: row.title,
+          subtitle: row.subtitle?.trim() || "Curated picks",
+          imageUri:
+            row.image?.trim() ||
+            categoryImageUri(row.title.toUpperCase()),
+          collectionSlug: row.collectionSlug,
+          productIds: row.productIds,
+        })),
+      );
+    } else {
+      setRelationshipCards([]);
+    }
+
+    if (chipRes.status === "fulfilled") {
+      setTrendingChips(chipRes.value);
+    } else {
+      setTrendingChips([]);
+    }
+
+    if (colRes.status === "fulfilled") {
+      setCollectionsList(
+        colRes.value.map((row) => ({
+          id: row.id,
+          title: row.title,
+          slug: row.slug,
+        })),
+      );
+    } else {
+      setCollectionsList([]);
+    }
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      void (async () => {
+        await loadDiscoverContent();
+        if (!cancelled) await loadRecents();
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, [loadDiscoverContent, loadRecents]),
+  );
+
+  const addRecentSearch = useCallback(
+    async (text: string) => {
+      const label = normalizeSearchKeyword(text);
+      if (!label || label.length < MIN_RECENT_KEYWORD_LEN) return;
+      const lower = label.toLowerCase();
+      setRecent((prev) => {
+        const next = [
+          { keyword: label },
+          ...prev.filter((e) => e.keyword.toLowerCase() !== lower),
+        ].slice(0, MAX_RECENT);
+        void persistLocalRecents(next);
+        return next;
+      });
+      if (userId) {
+        try {
+          const rows = await addSearchHistory(label, userId);
+          setRecent(
+            rows.map((row) => ({
+              id: row.id,
+              keyword: normalizeSearchKeyword(row.keyword),
+            })),
+          );
+        } catch {
+          /* local recents already updated */
+        }
+      }
+    },
+    [persistLocalRecents, userId],
+  );
 
   const openCategoryProducts = useCallback(
     (category: string) => {
@@ -169,33 +416,76 @@ export default function SearchScreen() {
 
   const openProduct = useCallback(
     (id: string, trackedQuery?: string) => {
-      if (trackedQuery) addRecentSearch(trackedQuery);
+      if (trackedQuery) void addRecentSearch(trackedQuery);
       pushProductDetails(router, id);
     },
     [addRecentSearch, router],
   );
 
-  const openOccasionProducts = useCallback(
-    (occasion: string) => {
-      router.push({
-        pathname: "/(app)/occasion-products",
-        params: { occasion },
-      });
+  const openMarketingSlug = useCallback(
+    (collectionSlug: string) => {
+      const key = collectionSlug.trim().toLowerCase();
+      if (!key) return;
+      pushCollection(router, key);
     },
     [router],
   );
 
-  const onRecentChipPress = useCallback((label: string) => {
-    setQuery(label);
+  const openRelationshipCard = useCallback(
+    (card: RelationshipNavCard) => {
+      if (card.productIds.length > 0) {
+        router.push({
+          pathname: "/(app)/category-products",
+          params: {
+            relationshipSectionId: card.id,
+            title: card.title,
+            category: "ALL",
+          },
+        });
+        return;
+      }
+      if (card.collectionSlug?.trim()) {
+        openMarketingSlug(card.collectionSlug);
+      }
+    },
+    [openMarketingSlug, router],
+  );
+
+  const onRecentChipPress = useCallback((keyword: string) => {
+    setQuery(keyword);
   }, []);
 
   const onTrendingChipPress = useCallback((label: string) => {
     setQuery(label);
   }, []);
 
-  const removeRecent = useCallback((label: string) => {
-    setRecent((prev) => prev.filter((x) => x !== label));
-  }, []);
+  const removeRecent = useCallback(
+    async (entry: RecentSearchEntry) => {
+      if (entry.id && userId) {
+        try {
+          await removeSearchHistoryEntry(entry.id, userId);
+        } catch {
+          /* still update UI */
+        }
+      }
+      setRecent((prev) => {
+        const next = prev.filter(
+          (x) =>
+            !(
+              (entry.id && x.id === entry.id) ||
+              x.keyword.toLowerCase() === entry.keyword.toLowerCase()
+            ),
+        );
+        void persistLocalRecents(next);
+        return next;
+      });
+    },
+    [persistLocalRecents, userId],
+  );
+
+  const commitSearchToRecents = useCallback(() => {
+    void addRecentSearch(trimmedQuery);
+  }, [addRecentSearch, trimmedQuery]);
 
   const renderResultItem = useCallback(
     ({ item }: { item: CatalogProduct }) => {
@@ -226,24 +516,137 @@ export default function SearchScreen() {
     [openProduct, toggleWishlist, trimmedQuery, wishIds],
   );
 
+  const trendingChipItems = useMemo(
+    () => (trendingChips.length ? trendingChips : trendingSearches),
+    [trendingChips],
+  );
+
+  const debouncedTrim = debouncedQuery.trim();
+
+  const suggestions = useMemo(
+    () =>
+      buildSearchSuggestions({
+        q: trimmedQuery,
+        debouncedQ: debouncedTrim,
+        categories: categoryIcons.map((c) => ({
+          id: c.id,
+          label: c.label,
+          categoryParam: c.categoryParam,
+        })),
+        occasions: occasionCards.map((o) => ({
+          id: o.id,
+          title: o.title,
+          collectionSlug: o.collectionSlug,
+        })),
+        relationships: relationshipCards.map((r) => ({
+          id: r.id,
+          title: r.title,
+        })),
+        collections: collectionsList,
+        chips: trendingChipItems.map((t) => ({ id: t.id, label: t.label })),
+        productHits: results,
+      }),
+    [
+      trimmedQuery,
+      debouncedTrim,
+      categoryIcons,
+      occasionCards,
+      relationshipCards,
+      collectionsList,
+      trendingChipItems,
+      results,
+    ],
+  );
+
+  const onSuggestionPress = useCallback(
+    (s: SearchSuggestion) => {
+      switch (s.kind) {
+        case "product":
+          if (s.productId) openProduct(s.productId, trimmedQuery);
+          break;
+        case "category":
+          if (s.categoryParam) openCategoryProducts(s.categoryParam);
+          break;
+        case "occasion":
+        case "collection":
+          if (s.collectionSlug) openMarketingSlug(s.collectionSlug);
+          break;
+        case "trending_chip":
+          if (s.chipLabel) setQuery(s.chipLabel);
+          break;
+        case "relationship_section": {
+          const card = relationshipCards.find(
+            (r) => r.id === s.relationshipSectionId,
+          );
+          if (card) openRelationshipCard(card);
+          break;
+        }
+      }
+    },
+    [
+      trimmedQuery,
+      openProduct,
+      openCategoryProducts,
+      openMarketingSlug,
+      relationshipCards,
+      openRelationshipCard,
+    ],
+  );
+
+  const renderSuggestionRow = useCallback(
+    ({ item }: { item: SearchSuggestion }) => (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${item.label}, ${item.subtitle ?? "suggestion"}`}
+        onPress={() => onSuggestionPress(item)}
+        style={({ pressed }) => [
+          styles.suggestionRow,
+          pressed && styles.suggestionRowPressed,
+        ]}
+      >
+        <MaterialIcons
+          name={suggestionMaterialIcon(item.kind)}
+          size={18}
+          color="#64748b"
+        />
+        <View style={styles.suggestionTextCol}>
+          <Text style={styles.suggestionTitle} numberOfLines={1}>
+            {item.label}
+          </Text>
+          {item.subtitle ? (
+            <Text style={styles.suggestionMeta}>{item.subtitle}</Text>
+          ) : null}
+        </View>
+        <MaterialIcons name="chevron-right" size={18} color="#cbd5e1" />
+      </Pressable>
+    ),
+    [onSuggestionPress],
+  );
+
   const resultsHeader = useMemo(() => {
     if (!isSearching) return null;
     const countLabel =
       results.length === 1 ? "1 result" : `${results.length} results`;
     return (
-      <View style={styles.resultsHeader}>
-        <Text style={styles.resultsCount}>{countLabel}</Text>
-        <Text style={styles.resultsFor} numberOfLines={1}>
-          for &ldquo;{trimmedQuery}&rdquo;
-        </Text>
+      <View style={styles.resultsHeaderOuter}>
+        <View style={styles.resultsHeader}>
+          <Text style={styles.resultsCount}>{countLabel}</Text>
+          <Text style={styles.resultsFor} numberOfLines={1}>
+            for &ldquo;{trimmedQuery}&rdquo;
+          </Text>
+        </View>
+        {isDebouncing ? (
+          <Text style={styles.debounceHint}>Updating…</Text>
+        ) : null}
       </View>
     );
-  }, [isSearching, results.length, trimmedQuery]);
+  }, [isSearching, results.length, trimmedQuery, isDebouncing]);
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 6 : 0}
         style={styles.keyboard}
       >
         <View style={styles.header}>
@@ -265,18 +668,31 @@ export default function SearchScreen() {
             value={query}
             onChangeText={setQuery}
             placeholder={searchPlaceholder || "Search jewellery, designs..."}
+            rotatingPlaceholders={SEARCH_ROTATING_PLACEHOLDERS}
             autoFocus
+            onSubmitEditing={commitSearchToRecents}
             onVoicePress={() => {
               /* voice search placeholder */
-            }}
-            onSubmitEditing={() => {
-              if (trimmedQuery) addRecentSearch(trimmedQuery);
             }}
           />
         </View>
 
         {isSearching ? (
-          searchLoading && results.length === 0 ? (
+          <View style={styles.searchBody}>
+            {suggestions.length > 0 ? (
+              <View style={styles.suggestionsWrap}>
+                <FlatList
+                  data={suggestions}
+                  keyExtractor={(item) => item.key}
+                  renderItem={renderSuggestionRow}
+                  keyboardShouldPersistTaps="handled"
+                  style={styles.suggestionsList}
+                  nestedScrollEnabled
+                  showsVerticalScrollIndicator={false}
+                />
+              </View>
+            ) : null}
+            {searchLoading && results.length === 0 ? (
             <View style={styles.resultsListContent}>
               <View style={styles.searchLoadingRow}>
                 <ActivityIndicator size="small" color="#0B1C2C" />
@@ -288,6 +704,7 @@ export default function SearchScreen() {
             </View>
           ) : showEmptyState ? (
             <ScrollView
+              style={styles.searchScrollFill}
               contentContainerStyle={styles.emptyStateScroll}
               keyboardShouldPersistTaps="handled"
             >
@@ -300,7 +717,7 @@ export default function SearchScreen() {
                 Try a different keyword or explore trending below.
               </Text>
               <View style={styles.emptyChipsRow}>
-                {trendingSearches.map((item) => (
+                {trendingChipItems.map((item) => (
                   <View key={item.id} style={styles.chipSpacer}>
                     <SearchItem
                       variant="trending"
@@ -313,6 +730,7 @@ export default function SearchScreen() {
             </ScrollView>
           ) : (
             <FlatList
+              style={styles.searchScrollFill}
               data={results}
               keyExtractor={(item) => item.id}
               renderItem={renderResultItem}
@@ -324,7 +742,8 @@ export default function SearchScreen() {
               keyboardDismissMode="on-drag"
               showsVerticalScrollIndicator={false}
             />
-          )
+          )}
+          </View>
         ) : (
           <ScrollView
             style={styles.scrollView}
@@ -342,15 +761,21 @@ export default function SearchScreen() {
                   contentContainerStyle={styles.chipsHScroll}
                   keyboardShouldPersistTaps="handled"
                 >
-                  {recent.map((label) => (
-                    <View key={label} style={styles.chipSpacer}>
+                  {recent.map((entry, index) => (
+                    <Animated.View
+                      key={entry.id ?? entry.keyword}
+                      entering={FadeIn.duration(260).delay(
+                        Math.min(index * 36, 180),
+                      )}
+                      style={styles.chipSpacer}
+                    >
                       <SearchItem
                         variant="recent"
-                        label={label}
-                        onPress={() => onRecentChipPress(label)}
-                        onRemove={() => removeRecent(label)}
+                        label={entry.keyword}
+                        onPress={() => onRecentChipPress(entry.keyword)}
+                        onRemove={() => void removeRecent(entry)}
                       />
-                    </View>
+                    </Animated.View>
                   ))}
                 </ScrollView>
               </View>
@@ -364,7 +789,7 @@ export default function SearchScreen() {
                 contentContainerStyle={styles.chipsHScroll}
                 keyboardShouldPersistTaps="handled"
               >
-                {trendingSearches.map((item) => (
+                {trendingChipItems.map((item) => (
                   <View key={item.id} style={styles.chipSpacer}>
                     <SearchItem
                       variant="trending"
@@ -376,151 +801,159 @@ export default function SearchScreen() {
               </ScrollView>
             </View>
 
-            <View style={styles.section}>
-              <SectionHeader
-                title="Product right now"
-                actionLabel="View all"
-                onActionPress={() => router.push("/trending")}
-              />
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.hScroll}
-              >
-                {searchSpotlightProducts.map((p) => (
-                  <ProductCard
-                    key={p.id}
-                    product={p}
-                    cardWidth={PRODUCT_CARD_W}
-                    onPress={() => openProduct(p.id)}
-                    isWishlisted={wishIds.includes(p.id)}
-                    onWishlistPress={() =>
-                      void toggleWishlist(p.id, snapshotFromSpotlight(p))
-                    }
-                  />
-                ))}
-              </ScrollView>
-            </View>
-
-            <View style={styles.section}>
-              <SectionHeader title="Shop by category" />
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.categoryHScroll}
-              >
-                {shopByCategoryIcons.map((item) => (
-                  <View key={item.id} style={styles.categoryItem}>
-                    <CategoryCard
-                      item={item}
-                      size={72}
-                      onPress={() => openCategoryProducts(item.categoryParam)}
+            {spotlightProducts.length > 0 ? (
+              <View style={styles.section}>
+                <SectionHeader
+                  title="Product right now"
+                  actionLabel="View all"
+                  onActionPress={() => router.push("/trending")}
+                />
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.hScroll}
+                >
+                  {spotlightProducts.map((p) => (
+                    <ProductCard
+                      key={p.id}
+                      product={p}
+                      cardWidth={PRODUCT_CARD_W}
+                      onPress={() => openProduct(p.id)}
+                      isWishlisted={wishIds.includes(p.id)}
+                      onWishlistPress={() =>
+                        void toggleWishlist(p.id, snapshotFromSpotlight(p))
+                      }
                     />
-                  </View>
-                ))}
-              </ScrollView>
-            </View>
+                  ))}
+                </ScrollView>
+              </View>
+            ) : null}
 
-            <View style={styles.section}>
-              <SectionHeader title="Shop by occasion" />
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                decelerationRate="fast"
-                snapToInterval={OCCASION_CARD_W + spacing.md}
-                snapToAlignment="start"
-                contentContainerStyle={styles.occasionHScroll}
-                nestedScrollEnabled
-                keyboardShouldPersistTaps="handled"
-              >
-                {shopOccasionItems.map((item) => (
-                  <View key={item.id} style={styles.occasionCardShadowWrap}>
-                    <PressScale
-                      onPress={() => openOccasionProducts(item.title)}
-                      style={styles.occasionCardClip}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Shop ${item.title}`}
-                    >
-                      <RemoteImage
-                        uri={item.imageUri}
-                        fallbackTint="#1f2937"
-                        style={styles.occasionImg}
+            {categoryIcons.length > 0 ? (
+              <View style={styles.section}>
+                <SectionHeader title="Shop by category" />
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.categoryHScroll}
+                >
+                  {categoryIcons.map((item) => (
+                    <View key={item.id} style={styles.categoryItem}>
+                      <CategoryCard
+                        item={item}
+                        size={72}
+                        onPress={() => openCategoryProducts(item.categoryParam)}
                       />
-                      <LinearGradient
-                        colors={[
-                          "rgba(0,0,0,0)",
-                          "rgba(0,0,0,0.15)",
-                          "rgba(0,0,0,0.78)",
-                        ]}
-                        locations={[0, 0.45, 1]}
-                        style={styles.occasionScrim}
-                        pointerEvents="none"
-                      />
-                      <View
-                        style={styles.occasionLabelWrap}
-                        pointerEvents="none"
+                    </View>
+                  ))}
+                </ScrollView>
+              </View>
+            ) : null}
+
+            {occasionCards.length > 0 ? (
+              <View style={styles.section}>
+                <SectionHeader title="Shop by occasion" />
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  decelerationRate="fast"
+                  snapToInterval={OCCASION_CARD_W + spacing.md}
+                  snapToAlignment="start"
+                  contentContainerStyle={styles.occasionHScroll}
+                  nestedScrollEnabled
+                  keyboardShouldPersistTaps="handled"
+                >
+                  {occasionCards.map((item) => (
+                    <View key={item.id} style={styles.occasionCardShadowWrap}>
+                      <PressScale
+                        onPress={() => openMarketingSlug(item.collectionSlug)}
+                        style={styles.occasionCardClip}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Shop ${item.title}`}
                       >
-                        <Text style={styles.occasionSubLabel}>
-                          {OCCASION_SUBTITLES[item.title] ?? "Explore the edit"}
-                        </Text>
-                        <Text style={styles.occasionCardText}>
-                          {item.title}
-                        </Text>
-                        <View style={styles.occasionCtaRow}>
-                          <Text style={styles.occasionCtaText}>SHOP NOW</Text>
-                          <MaterialIcons
-                            name="arrow-forward"
-                            size={14}
-                            color="#fff"
-                          />
+                        <RemoteImage
+                          uri={item.imageUri}
+                          fallbackTint="#1f2937"
+                          style={styles.occasionImg}
+                        />
+                        <LinearGradient
+                          colors={[
+                            "rgba(0,0,0,0)",
+                            "rgba(0,0,0,0.15)",
+                            "rgba(0,0,0,0.78)",
+                          ]}
+                          locations={[0, 0.45, 1]}
+                          style={styles.occasionScrim}
+                          pointerEvents="none"
+                        />
+                        <View
+                          style={styles.occasionLabelWrap}
+                          pointerEvents="none"
+                        >
+                          <Text style={styles.occasionSubLabel}>
+                            {item.lineSubtitle}
+                          </Text>
+                          <Text style={styles.occasionCardText}>
+                            {item.title}
+                          </Text>
+                          <View style={styles.occasionCtaRow}>
+                            <Text style={styles.occasionCtaText}>SHOP NOW</Text>
+                            <MaterialIcons
+                              name="arrow-forward"
+                              size={14}
+                              color="#fff"
+                            />
+                          </View>
                         </View>
-                      </View>
-                    </PressScale>
-                  </View>
-                ))}
-              </ScrollView>
-            </View>
-
-            <View style={styles.sectionRel}>
-              <View style={styles.sectionHeaderPad}>
-                <SectionHeader title="Shop by relationship" noPad />
+                      </PressScale>
+                    </View>
+                  ))}
+                </ScrollView>
               </View>
+            ) : null}
 
-              <View style={styles.relRow}>
-                {shopByRelationship.map((item) => (
-                  <View key={item.id} style={styles.relThird}>
-                    <PressScale
-                      onPress={() => openCategoryProducts(item.categoryParam)}
-                      style={styles.relThirdPress}
-                    >
-                      <RemoteImage
-                        uri={RELATIONSHIP_IMAGES[item.id]}
-                        fallbackTint="#374151"
-                        style={styles.relCardBg}
-                      />
-                      <LinearGradient
-                        colors={[
-                          "rgba(0,0,0,0)",
-                          "rgba(0,0,0,0.25)",
-                          "rgba(0,0,0,0.75)",
-                        ]}
-                        locations={[0.35, 0.65, 1]}
-                        style={StyleSheet.absoluteFillObject}
-                        pointerEvents="none"
-                      />
-                      <View style={styles.relThirdLabel} pointerEvents="none">
-                        <Text style={styles.relThirdTitle} numberOfLines={1}>
-                          {item.title}
-                        </Text>
-                        <Text style={styles.relThirdSubtitle} numberOfLines={1}>
-                          {item.subtitle}
-                        </Text>
-                      </View>
-                    </PressScale>
-                  </View>
-                ))}
+            {relationshipCards.length > 0 ? (
+              <View style={styles.sectionRel}>
+                <View style={styles.sectionHeaderPad}>
+                  <SectionHeader title="Shop by relationship" noPad />
+                </View>
+
+                <View style={styles.relRow}>
+                  {relationshipCards.map((item) => (
+                    <View key={item.id} style={styles.relThird}>
+                      <PressScale
+                        onPress={() => openRelationshipCard(item)}
+                        style={styles.relThirdPress}
+                      >
+                        <RemoteImage
+                          uri={item.imageUri}
+                          fallbackTint="#374151"
+                          style={styles.relCardBg}
+                        />
+                        <LinearGradient
+                          colors={[
+                            "rgba(0,0,0,0)",
+                            "rgba(0,0,0,0.25)",
+                            "rgba(0,0,0,0.75)",
+                          ]}
+                          locations={[0.35, 0.65, 1]}
+                          style={StyleSheet.absoluteFillObject}
+                          pointerEvents="none"
+                        />
+                        <View style={styles.relThirdLabel} pointerEvents="none">
+                          <Text style={styles.relThirdTitle} numberOfLines={1}>
+                            {item.title}
+                          </Text>
+                          <Text style={styles.relThirdSubtitle} numberOfLines={1}>
+                            {item.subtitle}
+                          </Text>
+                        </View>
+                      </PressScale>
+                    </View>
+                  ))}
+                </View>
               </View>
-            </View>
+            ) : null}
           </ScrollView>
         )}
       </KeyboardAvoidingView>
@@ -569,6 +1002,55 @@ const styles = StyleSheet.create({
   },
   keyboard: {
     flex: 1,
+  },
+  searchBody: {
+    flex: 1,
+    minHeight: 0,
+  },
+  searchScrollFill: {
+    flex: 1,
+  },
+  suggestionsWrap: {
+    maxHeight: 200,
+    backgroundColor: "#fff",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#e5e7eb",
+  },
+  suggestionsList: {
+    maxHeight: 200,
+  },
+  suggestionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: H_PADDING,
+    gap: 10,
+    backgroundColor: "#fff",
+  },
+  suggestionRowPressed: {
+    backgroundColor: "#f9fafb",
+  },
+  suggestionTextCol: {
+    flex: 1,
+    minWidth: 0,
+  },
+  suggestionTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#111827",
+  },
+  suggestionMeta: {
+    marginTop: 2,
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#94a3b8",
+    letterSpacing: 0.3,
+  },
+  debounceHint: {
+    marginTop: 4,
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#94a3b8",
   },
   scrollView: {
     flex: 1,
@@ -765,18 +1247,12 @@ const styles = StyleSheet.create({
   },
 
   /* ----- Results grid ----- */
-  resultsListContent: {
-    paddingHorizontal: H_PADDING,
-    paddingTop: spacing.md,
-    paddingBottom: 120,
-  },
-  resultsColumnWrap: {
-    justifyContent: "space-between",
+  resultsHeaderOuter: {
+    marginBottom: spacing.md,
   },
   resultsHeader: {
     flexDirection: "row",
     alignItems: "baseline",
-    marginBottom: spacing.md,
     gap: 6,
   },
   resultsCount: {
@@ -790,6 +1266,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#6b7280",
     fontWeight: "500",
+  },
+  resultsListContent: {
+    paddingHorizontal: H_PADDING,
+    paddingTop: spacing.md,
+    paddingBottom: 120,
+  },
+  resultsColumnWrap: {
+    justifyContent: "space-between",
   },
 
   /* ----- Empty state ----- */

@@ -3,7 +3,7 @@ import { BlurView } from 'expo-blur';
 import Constants from 'expo-constants';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, type Href } from 'expo-router';
-import React, { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Modal,
   Platform,
@@ -31,15 +31,14 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { CallbackModal } from '@/lib/components/common/CallbackModal';
 import { RemoteImage } from '@/lib/components/common/RemoteImage';
 import { categoryImageUri } from '@/lib/services/mock/imageUrls';
+import {
+  fetchCategoriesUi,
+  fetchMenuCategoriesUi,
+  type CategoryUi,
+  type MenuCategoryUi,
+} from '@/lib/services/catalogApi';
 import { fontSizes, radius, spacing } from '@/src/constants/theme';
 import { useAuth } from '@/context/AuthContext';
-
-const MENU_CATEGORY_ROWS: { label: string; categoryKey: string }[] = [
-  { label: 'Diamond', categoryKey: 'RINGS' },
-  { label: 'Gold Coins', categoryKey: 'GOLD COINS' },
-  { label: 'Platinum', categoryKey: 'RINGS' },
-  { label: 'Solitaire', categoryKey: 'SOLITAIRES' },
-];
 
 const OPEN_MS = 280;
 const CLOSE_MS = 250;
@@ -53,19 +52,47 @@ const springSnapOpen = { damping: 22, stiffness: 320, mass: 0.9 };
 
 type IconName = React.ComponentProps<typeof MaterialIcons>['name'];
 
-/**
- * Every `Shop for` row opens the reusable `CollectionScreen` via
- * `/(app)/collection/<slug>` — no per-type screens, UI stays identical to
- * Wedding Collection, and the slug drives the dynamic title + curated grid.
- */
-type ShopSlug = 'women' | 'men' | 'kids' | 'offers' | 'gifts';
-const SHOP_ITEMS: { label: string; icon: IconName; slug: ShopSlug; badge?: 'new' }[] = [
-  { label: 'Women', icon: 'woman', slug: 'women' },
-  { label: 'Men', icon: 'man', slug: 'men' },
-  { label: 'Kids & infants', icon: 'child-care', slug: 'kids' },
-  { label: 'Offers', icon: 'local-offer', slug: 'offers', badge: 'new' },
-  { label: 'Gifts', icon: 'card-giftcard', slug: 'gifts' },
+const SHOP_FALLBACK: Array<{
+  id: string;
+  title: string;
+  slug: string;
+  collectionSlug: string;
+  icon: string | null;
+  image: string | null;
+  badge: string | null;
+}> = [
+  { id: 'fb-women', title: 'Women', slug: 'women', collectionSlug: 'women', icon: 'woman', image: null, badge: null },
+  { id: 'fb-men', title: 'Men', slug: 'men', collectionSlug: 'men', icon: 'man', image: null, badge: null },
+  { id: 'fb-kids', title: 'Kids & infants', slug: 'kids', collectionSlug: 'kids', icon: 'child-care', image: null, badge: null },
+  { id: 'fb-offers', title: 'Offers', slug: 'offers', collectionSlug: 'offers', icon: 'local-offer', image: null, badge: 'NEW' },
+  { id: 'fb-gifts', title: 'Gifts', slug: 'gifts', collectionSlug: 'gifts', icon: 'card-giftcard', image: null, badge: null },
 ];
+
+const VALID_ICON_NAMES: ReadonlyArray<IconName> = [
+  'woman',
+  'man',
+  'child-care',
+  'local-offer',
+  'card-giftcard',
+  'storefront',
+  'diamond',
+  'savings',
+  'event',
+  'favorite',
+  'star',
+  'shopping-bag',
+  'category',
+  'auto-awesome',
+  'celebration',
+  'cake',
+];
+
+function resolveIcon(name: string | null | undefined): IconName {
+  if (!name) return 'storefront';
+  const lower = name.trim().toLowerCase();
+  const match = VALID_ICON_NAMES.find((entry) => entry === lower);
+  return match ?? 'storefront';
+}
 
 const GOLD_PLAN_ITEMS: { label: string; sub: string; icon: IconName; href: Href; variant: 'mine' | 'reserve' }[] = [
   { label: 'Gold Mine', sub: '10+1 Monthly Plan', icon: 'diamond', href: '/(app)/gold-mine-plan', variant: 'mine' },
@@ -101,6 +128,47 @@ export default function MenuScreen() {
   const { width: winW } = useWindowDimensions();
   const [callbackModalOpen, setCallbackModalOpen] = useState(false);
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
+  const [shopItems, setShopItems] = useState<MenuCategoryUi[]>([]);
+  const [shopLoaded, setShopLoaded] = useState(false);
+  const [menuCategories, setMenuCategories] = useState<CategoryUi[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [menuRows, categoryRows] = await Promise.all([
+          fetchMenuCategoriesUi(),
+          fetchCategoriesUi(),
+        ]);
+        if (cancelled) return;
+        setShopItems(menuRows);
+        setMenuCategories(categoryRows);
+      } catch (error) {
+        if (!cancelled) console.warn('[menu] failed to load CMS data', error);
+      } finally {
+        if (!cancelled) setShopLoaded(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const renderedShopItems = useMemo(
+    () =>
+      shopItems.length > 0
+        ? shopItems.map((row) => ({
+            id: row.id,
+            title: row.title,
+            slug: row.slug,
+            collectionSlug: row.collectionSlug,
+            icon: row.icon,
+            image: row.image,
+            badge: row.badge,
+          }))
+        : SHOP_FALLBACK,
+    [shopItems],
+  );
 
   const drawerW = useSharedValue(Math.max(280, winW * DRAWER_WIDTH_RATIO));
   const translateX = useSharedValue(-Math.max(280, winW * DRAWER_WIDTH_RATIO));
@@ -297,76 +365,104 @@ export default function MenuScreen() {
                   bounces
                 >
                   <Text style={styles.sectionLabel}>Shop for</Text>
+                  {!shopLoaded && renderedShopItems.length === 0 ? (
+                    <Text style={styles.menuPlaceholder}>Loading…</Text>
+                  ) : null}
                   <View style={styles.menuList}>
-                    {SHOP_ITEMS.map((item) => (
-                      <Pressable
-                        key={item.label}
-                        onPress={() =>
-                          navigateAfterClose({
-                            pathname: '/(app)/collection/[slug]',
-                            params: { slug: item.slug },
-                          } as Href)
-                        }
-                        style={({ pressed }) => [
-                          styles.menuItemOuter,
-                          item.slug === 'offers' && styles.menuItemOffers,
-                          pressed && styles.menuItemPressed,
-                        ]}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Open ${item.label} collection`}
-                        android_ripple={{ color: 'rgba(0,0,0,0.06)' }}
-                      >
-                        <View style={styles.menuItemRow}>
-                          <View style={styles.menuIconSlot}>
-                            <MaterialIcons name={item.icon} size={22} color="#1f2937" />
-                          </View>
-                          <Text style={styles.menuLabel} numberOfLines={1}>
-                            {item.label}
-                          </Text>
-                          {item.badge === 'new' ? (
-                            <View style={styles.newPill}>
-                              <Text style={styles.newPillText}>NEW</Text>
+                    {renderedShopItems.map((item) => {
+                      const iconName = resolveIcon(item.icon);
+                      const isOffers = item.slug === 'offers';
+                      return (
+                        <Pressable
+                          key={item.id}
+                          onPress={() =>
+                            navigateAfterClose({
+                              pathname: '/(app)/collection/[slug]',
+                              params: { slug: item.collectionSlug || item.slug },
+                            } as Href)
+                          }
+                          style={({ pressed }) => [
+                            styles.menuItemOuter,
+                            isOffers && styles.menuItemOffers,
+                            pressed && styles.menuItemPressed,
+                          ]}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Open ${item.title} collection`}
+                          android_ripple={{ color: 'rgba(0,0,0,0.06)' }}
+                        >
+                          <View style={styles.menuItemRow}>
+                            <View style={styles.menuIconSlot}>
+                              {item.image ? (
+                                <RemoteImage
+                                  uri={item.image}
+                                  fallbackTint="#f1f5f9"
+                                  style={styles.menuItemImage}
+                                />
+                              ) : (
+                                <MaterialIcons name={iconName} size={22} color="#1f2937" />
+                              )}
                             </View>
-                          ) : null}
-                          <View style={styles.menuChevronSlot}>
-                            <MaterialIcons name="chevron-right" size={22} color="#cbd5e1" />
+                            <Text style={styles.menuLabel} numberOfLines={1}>
+                              {item.title}
+                            </Text>
+                            {item.badge ? (
+                              <View style={styles.newPill}>
+                                <Text style={styles.newPillText}>
+                                  {item.badge.toUpperCase()}
+                                </Text>
+                              </View>
+                            ) : null}
+                            <View style={styles.menuChevronSlot}>
+                              <MaterialIcons
+                                name="chevron-right"
+                                size={22}
+                                color="#cbd5e1"
+                              />
+                            </View>
                           </View>
-                        </View>
-                      </Pressable>
-                    ))}
+                        </Pressable>
+                      );
+                    })}
                   </View>
 
-                  <Text style={styles.sectionLabel}>Categories</Text>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.categoryContainer}
-                    style={styles.categoryScroll}
-                  >
-                    {MENU_CATEGORY_ROWS.map((item) => (
-                      <Pressable
-                        key={item.label}
-                        style={({ pressed }) => [styles.categoryItem, pressed && styles.categoryItemPressed]}
-                        onPress={() =>
-                          navigateAfterClose({
-                            pathname: '/(app)/category-products',
-                            params: { category: item.categoryKey },
-                          } as Href)
-                        }
+                  {menuCategories.length > 0 ? (
+                    <>
+                      <Text style={styles.sectionLabel}>Categories</Text>
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.categoryContainer}
+                        style={styles.categoryScroll}
                       >
-                        <View style={styles.categoryImage}>
-                          <RemoteImage
-                            uri={categoryImageUri(item.categoryKey)}
-                            fallbackTint="#f5f0e6"
-                            style={StyleSheet.absoluteFillObject}
-                          />
-                        </View>
-                        <Text style={styles.categoryText} numberOfLines={1}>
-                          {item.label}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </ScrollView>
+                        {menuCategories.map((item) => (
+                          <Pressable
+                            key={item.id}
+                            style={({ pressed }) => [
+                              styles.categoryItem,
+                              pressed && styles.categoryItemPressed,
+                            ]}
+                            onPress={() =>
+                              navigateAfterClose({
+                                pathname: '/(app)/category-products',
+                                params: { category: item.name },
+                              } as Href)
+                            }
+                          >
+                            <View style={styles.categoryImage}>
+                              <RemoteImage
+                                uri={item.image ?? categoryImageUri(item.name)}
+                                fallbackTint="#f5f0e6"
+                                style={StyleSheet.absoluteFillObject}
+                              />
+                            </View>
+                            <Text style={styles.categoryText} numberOfLines={1}>
+                              {item.name}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </ScrollView>
+                    </>
+                  ) : null}
 
                   <Text style={styles.sectionLabel}>Gold plans</Text>
                   <View style={styles.menuList}>
@@ -643,6 +739,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
+  },
+  menuItemImage: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  menuPlaceholder: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 12,
+    color: '#94a3b8',
   },
   menuLabel: {
     flex: 1,

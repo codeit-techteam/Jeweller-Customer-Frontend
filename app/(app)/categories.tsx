@@ -17,6 +17,7 @@ import { useNetworkReachable } from '@/hooks/useNetworkReachable';
 import { CollectionExploreCard } from '@/lib/components/common/CollectionExploreCard';
 import { RemoteImage } from '@/lib/components/common/RemoteImage';
 import { SearchBar } from '@/lib/components/common/SearchBar';
+import { SEARCH_ROTATING_PLACEHOLDERS } from '@/lib/constants/searchRotatingPlaceholders';
 import { fetchCategoriesUi, fetchCollectionsUi } from '@/lib/services/catalogApi';
 import { PLACEHOLDER_IMAGE_URI } from '@/lib/services/mock/imageUrls';
 import { ApiError } from '@/services/api';
@@ -106,6 +107,7 @@ export default function CategoriesScreen() {
             <View style={styles.searchBarWrap}>
               <SearchBar
                 placeholder="Search categories or jewellery"
+                rotatingPlaceholders={SEARCH_ROTATING_PLACEHOLDERS}
                 onPress={openSearch}
               />
             </View>

@@ -23,16 +23,25 @@ import {
     ProductListingFilterSheets,
     useFilteredListingProducts,
 } from "@/lib/components/listingFilters/ProductListingFilters";
-import { fetchCategoryProductsUi } from "@/lib/services/catalogApi";
+import {
+  fetchCategoriesUi,
+  fetchCategoryProductsUi,
+  inferMetalFromName,
+  type CategoryUi,
+} from "@/lib/services/catalogApi";
 import {
     normalizeCategoryParam,
     parseAppliedFiltersJson,
     type CategoryProduct,
 } from "@/lib/services/mock/categoryProducts";
 import { snapshotFromListingFields } from "@/lib/services/mock/wishlist";
+import { getRelationshipSectionListing } from "@/services/api";
 import { useProductListingFiltersStore } from "@/lib/stores/productListingFiltersStore";
 import { useWishlistStore } from "@/lib/stores/wishlistStore";
 import { fontSizes, radius, spacing } from "@/src/constants/theme";
+
+const UUID_V4_LIKE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type ApiCategoryProduct = CategoryProduct & {
   thumbnail_image?: string | null;
@@ -55,6 +64,46 @@ function toListingItem(item: ApiCategoryProduct): ListingProductCardItem {
   };
 }
 
+function mapRelationshipListingRow(
+  row: Awaited<ReturnType<typeof getRelationshipSectionListing>>["products"][number],
+  index: number,
+): ApiCategoryProduct {
+  const boutique = row.boutique ?? null;
+  const ratingRaw = boutique?.rating;
+  const ratingNumber = ratingRaw == null ? null : Number(ratingRaw);
+  const boutiqueRating =
+    ratingNumber != null && Number.isFinite(ratingNumber) && ratingNumber > 0
+      ? ratingNumber
+      : null;
+  const boutiqueVerified = Boolean(
+    boutique?.is_verified ?? boutique?.verified ?? false,
+  );
+  const thumb =
+    row.thumbnail_image ??
+    row.primary_image ??
+    row.featured_image ??
+    row.image ??
+    (Array.isArray(row.gallery_images) ? row.gallery_images[0] : null) ??
+    null;
+  return {
+    id: row.id,
+    name: row.name,
+    category: row.category?.name ?? "RINGS",
+    price: Number(row.price),
+    metal: inferMetalFromName(row.name),
+    styles: ["Contemporary"],
+    distanceKm: 1.2 + (index % 6),
+    boutiqueVerified,
+    boutiqueRatedHigh: (boutiqueRating ?? 0) >= 4.7,
+    services: ["walkin", "appointment"],
+    openNow: true,
+    thumbnail_image: thumb,
+    boutiqueId: boutique?.id ?? row.boutique_id ?? null,
+    boutiqueName: boutique?.name?.trim() ? boutique.name.trim() : null,
+    boutiqueRating,
+  };
+}
+
 export default function CategoryProductsScreen() {
   const router = useRouter();
   const navigation = useNavigation();
@@ -64,8 +113,21 @@ export default function CategoryProductsScreen() {
     category?: string;
     filters?: string;
     title?: string;
+    relationshipSectionId?: string;
   }>();
-  const categoryRaw = params.category?.toString() || "RINGS";
+  const relationshipSectionIdRaw = params.relationshipSectionId;
+  const relationshipSectionId = (
+    Array.isArray(relationshipSectionIdRaw)
+      ? relationshipSectionIdRaw[0]
+      : relationshipSectionIdRaw
+  )
+    ?.toString()
+    ?.trim();
+  const relationshipMode = Boolean(
+    relationshipSectionId && UUID_V4_LIKE.test(relationshipSectionId),
+  );
+
+  const categoryRaw = relationshipMode ? "ALL" : params.category?.toString() || "RINGS";
   const category = normalizeCategoryParam(categoryRaw);
   const titleRaw = params.title;
   const titleOverride = (Array.isArray(titleRaw) ? titleRaw[0] : titleRaw)
@@ -88,6 +150,7 @@ export default function CategoryProductsScreen() {
   const [apiProducts, setApiProducts] = React.useState<ApiCategoryProduct[]>(
     [],
   );
+  const [adminCategories, setAdminCategories] = React.useState<CategoryUi[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -96,10 +159,25 @@ export default function CategoryProductsScreen() {
     void (async () => {
       setLoading(true);
       try {
-        const rows = await fetchCategoryProductsUi();
-        if (!mounted) return;
-        setApiProducts(rows as ApiCategoryProduct[]);
-        setError(null);
+        if (relationshipMode && relationshipSectionId) {
+          const res = await getRelationshipSectionListing(relationshipSectionId);
+          if (!mounted) return;
+          const mapped = (res.products ?? []).map((row, index) =>
+            mapRelationshipListingRow(row, index),
+          );
+          setApiProducts(mapped);
+          setAdminCategories([]);
+          setError(null);
+        } else {
+          const [rows, cmsCategories] = await Promise.all([
+            fetchCategoryProductsUi(),
+            fetchCategoriesUi().catch(() => [] as CategoryUi[]),
+          ]);
+          if (!mounted) return;
+          setApiProducts(rows as ApiCategoryProduct[]);
+          setAdminCategories(cmsCategories);
+          setError(null);
+        }
       } catch {
         if (!mounted) return;
         setError("Unable to load products");
@@ -110,7 +188,7 @@ export default function CategoryProductsScreen() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [relationshipMode, relationshipSectionId]);
 
   useEffect(() => {
     clearAll();
@@ -132,23 +210,73 @@ export default function CategoryProductsScreen() {
     [],
   );
 
-  const filteredProducts = useFilteredListingProducts(category, apiProducts);
+  /**
+   * If the admin has attached products to this category, restrict the listing
+   * to those products in admin's exact sort_order. The user can still narrow
+   * the result with price/metal/rating filters or re-sort via the bottom
+   * sheet — but with the default "relevance" sort, admin order is honoured
+   * 1:1 (no name / created_at / random shuffle).
+   */
+  const adminOverride = useMemo(() => {
+    if (relationshipMode) return null;
+    if (!adminCategories.length || !apiProducts.length) return null;
+    const normalize = (value: string) =>
+      value.trim().toUpperCase().replace(/\s+/g, "");
+    const target = normalize(category);
+    const match = adminCategories.find((row) => {
+      const name = normalize(row.name ?? "");
+      const slug = normalize(row.slug ?? "");
+      return name === target || slug === target;
+    });
+    if (!match || match.productIds.length === 0) return null;
+    const productById = new Map(apiProducts.map((row) => [row.id, row]));
+    const ordered: ApiCategoryProduct[] = [];
+    for (const id of match.productIds) {
+      const hit = productById.get(id);
+      if (hit) ordered.push(hit);
+    }
+    if (!ordered.length) return null;
+    return ordered;
+  }, [adminCategories, apiProducts, category, relationshipMode]);
+
+  // When admin has curated this category, bypass the category-name filter
+  // inside `useFilteredListingProducts` — our list is already pre-scoped to
+  // the right category in admin's exact order. The remaining filters (price,
+  // metal, rating, etc.) still apply on top.
+  const filteredProducts = useFilteredListingProducts(
+    adminOverride ? "ALL" : category,
+    adminOverride ?? apiProducts,
+  );
 
   const displayTitle =
-    titleOverride || (category === "ALL" ? "All jewellery" : category);
+    titleOverride ||
+    (relationshipMode ? "Curated picks" : category === "ALL" ? "All jewellery" : category);
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
     try {
-      const rows = await fetchCategoryProductsUi();
-      setApiProducts(rows as ApiCategoryProduct[]);
+      if (relationshipMode && relationshipSectionId) {
+        const res = await getRelationshipSectionListing(relationshipSectionId);
+        const mapped = (res.products ?? []).map((row, index) =>
+          mapRelationshipListingRow(row, index),
+        );
+        setApiProducts(mapped);
+        setAdminCategories([]);
+      } else {
+        const [rows, cmsCategories] = await Promise.all([
+          fetchCategoryProductsUi(),
+          fetchCategoriesUi().catch(() => [] as CategoryUi[]),
+        ]);
+        setApiProducts(rows as ApiCategoryProduct[]);
+        setAdminCategories(cmsCategories);
+      }
       setError(null);
     } catch {
       setError("Unable to load products");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [relationshipMode, relationshipSectionId]);
 
   useLayoutEffect(() => {
     navigation.setOptions({ title: displayTitle });

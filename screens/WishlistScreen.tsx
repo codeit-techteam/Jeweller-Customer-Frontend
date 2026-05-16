@@ -6,6 +6,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
 
 import { WishlistCard } from "@/lib/components/common/WishlistCard";
+import { CartNavIcon } from "@/lib/components/common/CartNavIcon";
 import { pushProductDetails } from "@/lib/navigation/productNavigation";
 import { getProductById } from "@/lib/services/mock/products";
 import { useCartStore } from "@/lib/stores/cartStore";
@@ -23,10 +24,8 @@ export default function WishlistScreen() {
   const toggleWishlist = useWishlistStore((s) => s.toggle);
   const removeWishlist = useWishlistStore((s) => s.remove);
   const addItem = useCartStore((s) => s.addItem);
-  const cartItems = useCartStore((s) => s.items);
-  const cartCount = useMemo(
-    () => cartItems.reduce((a, x) => a + x.qty, 0),
-    [cartItems],
+  const cartCount = useCartStore((s) =>
+    s.items.reduce((acc, line) => acc + line.qty, 0),
   );
 
   const rows = useMemo(() => ids.map((id) => items[id]).filter(Boolean), [ids, items]);
@@ -79,21 +78,14 @@ export default function WishlistScreen() {
           <MaterialIcons name="arrow-back-ios" size={22} color={NAVY} />
         </Pressable>
         <Text style={styles.headerTitle}>Wishlist</Text>
-        <Pressable
-          hitSlop={12}
+        <CartNavIcon
+          variant="plain"
+          count={cartCount}
           onPress={() => router.push("/(app)/cart")}
+          size={24}
+          iconColor={NAVY}
           style={styles.cartWrap}
-          accessibilityRole="button"
-        >
-          <MaterialIcons name="shopping-bag" size={24} color={NAVY} />
-          {cartCount > 0 ? (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>
-                {cartCount > 99 ? "99+" : String(cartCount)}
-              </Text>
-            </View>
-          ) : null}
-        </Pressable>
+        />
       </View>
 
       <View style={styles.tabRow}>
@@ -165,19 +157,6 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
     justifyContent: "center",
   },
-  badge: {
-    position: "absolute",
-    top: -4,
-    right: -2,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: "#111",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 4,
-  },
-  badgeText: { color: "#fff", fontSize: 10, fontWeight: "800" },
   tabRow: {
     flexDirection: "row",
     paddingHorizontal: spacing.lg,

@@ -161,7 +161,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   pressed: {
-    opacity: 0.85,
-    transform: [{ scale: 0.97 }],
+    opacity: 0.88,
+    transform: [{ scale: 0.985 }],
   },
 });

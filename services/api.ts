@@ -28,9 +28,26 @@ function request<T>(
 }
 
 export function getCategories() {
-  return request<Array<{ id: string; name: string; image: string | null }>>(
-    "/api/categories",
-  );
+  return request<
+    Array<{
+      id: string;
+      name: string;
+      image: string | null;
+      slug?: string | null;
+      subtitle?: string | null;
+      description?: string | null;
+      sort_order?: number;
+      is_active?: boolean;
+      products?: Array<{
+        id: string;
+        name?: string;
+        image?: string | null;
+        price?: number | null;
+        sort_order?: number;
+      }>;
+      product_ids?: string[];
+    }>
+  >("/api/categories");
 }
 
 export function getProducts(categoryId?: string) {
@@ -298,16 +315,50 @@ export function getBoutiqueById(id: string) {
   }>(`/api/boutiques/${id}`, { method: "GET", params: { t: stamp } });
 }
 
-export function getCollections() {
-  return request<
-    Array<{
-      id: string;
-      title: string;
-      subtitle: string | null;
-      image: string | null;
-      slug: string | null;
-    }>
-  >("/api/collections", { method: "GET" });
+export type CmsLinkedProduct = {
+  id: string;
+  name: string;
+  price: number;
+  image: string | null;
+  status?: string;
+  is_trending?: boolean;
+  discount_percentage?: number | null;
+  sort_order?: number;
+};
+
+export type CollectionRow = {
+  id: string;
+  title: string;
+  subtitle: string | null;
+  description?: string | null;
+  image: string | null;
+  banner_image?: string | null;
+  slug: string | null;
+  sort_order?: number;
+  is_active?: boolean;
+  is_trending?: boolean;
+  is_featured?: boolean;
+  products?: CmsLinkedProduct[];
+};
+
+export function getCollections(opts?: {
+  trending?: boolean;
+  featured?: boolean;
+}) {
+  const params: Record<string, string | boolean> = {};
+  if (opts?.trending) params.trending = true;
+  if (opts?.featured) params.featured = true;
+  return request<CollectionRow[]>("/api/collections", {
+    method: "GET",
+    ...(Object.keys(params).length ? { params } : {}),
+  });
+}
+
+export function getCollectionBySlug(slug: string) {
+  return request<CollectionRow>(
+    `/api/collections/slug/${encodeURIComponent(slug)}`,
+    { method: "GET" },
+  );
 }
 
 export function getOccasions() {
@@ -316,10 +367,200 @@ export function getOccasions() {
       id: string;
       title: string;
       subtitle: string | null;
+      description?: string | null;
       image: string | null;
+      slug?: string | null;
       collection_slug: string | null;
+      sort_order?: number;
+      is_active?: boolean;
+      products?: CmsLinkedProduct[];
     }>
   >("/api/occasions", { method: "GET" });
+}
+
+export function getMenuCategories() {
+  return request<
+    Array<{
+      id: string;
+      title: string;
+      slug: string | null;
+      subtitle?: string | null;
+      icon: string | null;
+      image: string | null;
+      badge: string | null;
+      collection_slug: string | null;
+      description: string | null;
+      sort_order: number;
+      is_active: boolean;
+      products?: CmsLinkedProduct[];
+    }>
+  >("/api/menu-categories", { method: "GET" });
+}
+
+export function getFeaturedSections() {
+  return request<
+    Array<{
+      id: string;
+      title: string;
+      slug: string | null;
+      subtitle: string | null;
+      description: string | null;
+      banner_image: string | null;
+      layout: string;
+      sort_order: number;
+      is_active: boolean;
+      products?: CmsLinkedProduct[];
+    }>
+  >("/api/featured-sections", { method: "GET" });
+}
+
+export function getOffers() {
+  return request<
+    Array<{
+      id: string;
+      title: string;
+      slug: string | null;
+      subtitle: string | null;
+      description: string | null;
+      discount_text: string | null;
+      badge: string | null;
+      image: string | null;
+      banner_image: string | null;
+      cta_label: string | null;
+      cta_target: string | null;
+      starts_at: string | null;
+      expires_at: string | null;
+      sort_order: number;
+      is_active: boolean;
+      products?: CmsLinkedProduct[];
+      collections?: Array<{
+        id: string;
+        title?: string | null;
+        slug?: string | null;
+        image?: string | null;
+      }>;
+    }>
+  >("/api/offers", { method: "GET" });
+}
+
+export function getGiftCollections() {
+  return request<
+    Array<{
+      id: string;
+      title: string;
+      slug: string | null;
+      subtitle: string | null;
+      description: string | null;
+      image: string | null;
+      banner_image: string | null;
+      sort_order: number;
+      is_active: boolean;
+      products?: CmsLinkedProduct[];
+    }>
+  >("/api/gift-collections", { method: "GET" });
+}
+
+export type RelationshipSectionApi = {
+  id: string;
+  title: string;
+  slug: string | null;
+  subtitle: string | null;
+  image: string | null;
+  collection_slug: string | null;
+  sort_order: number;
+  is_active: boolean;
+  products?: CmsLinkedProduct[];
+  product_ids?: string[];
+};
+
+export function getRelationshipSections() {
+  return request<RelationshipSectionApi[]>("/api/relationship-sections", {
+    method: "GET",
+  });
+}
+
+export function getRelationshipSectionListing(sectionId: string) {
+  return request<{
+    section: RelationshipSectionApi;
+    products: Array<{
+      id: string;
+      name: string;
+      price: number;
+      image: string | null;
+      primary_image?: string | null;
+      thumbnail_image?: string | null;
+      featured_image?: string | null;
+      gallery_images?: string[] | null;
+      category_id?: string | null;
+      boutique_id?: string | null;
+      description?: string | null;
+      category?: { id: string; name: string } | null;
+      boutique?: {
+        id: string;
+        name: string;
+        rating: number | null;
+        is_verified?: boolean | null;
+        verified?: boolean | null;
+        image?: string | null;
+        logo?: string | null;
+      } | null;
+    }>;
+  }>(
+    `/api/relationship-sections/${encodeURIComponent(sectionId)}/listing`,
+    { method: "GET" },
+  );
+}
+
+export type DiscoverFeaturedProductApi = CmsLinkedProduct & {
+  row_id?: string;
+  sort_order?: number;
+  is_active?: boolean;
+  description?: string | null;
+  boutique?: {
+    id: string;
+    name: string;
+    rating: number | null;
+    verified: boolean;
+  } | null;
+};
+
+export function getDiscoverFeaturedProducts() {
+  return request<DiscoverFeaturedProductApi[]>("/api/featured-products", {
+    method: "GET",
+  });
+}
+
+export type SearchHistoryEntry = {
+  id: string;
+  keyword: string;
+  created_at?: string;
+};
+
+export function getSearchHistory(userId: string) {
+  return request<SearchHistoryEntry[]>(
+    "/api/search-history",
+    { method: "GET" },
+    { userId },
+  );
+}
+
+export function addSearchHistory(keyword: string, userId: string) {
+  return request<SearchHistoryEntry[]>(
+    "/api/search-history",
+    {
+      method: "POST",
+      data: { keyword },
+    },
+    { userId },
+  );
+}
+
+export function removeSearchHistoryEntry(entryId: string, userId: string) {
+  return request<{ id: string }>(
+    `/api/search-history/${encodeURIComponent(entryId)}`,
+    { method: "DELETE" },
+    { userId },
+  );
 }
 
 export function addRecentlyViewed(data: {

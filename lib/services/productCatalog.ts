@@ -12,7 +12,15 @@
  *   or mock arrays are read here.
  */
 
-import { getProducts } from "@/services/api";
+import {
+  ApiError,
+  getCollectionBySlug,
+  getGiftCollections,
+  getMenuCategories,
+  getOccasions,
+  getOffers,
+  getProducts,
+} from "@/services/api";
 import { PLACEHOLDER_IMAGE_URI } from "@/lib/services/mock/imageUrls";
 
 export type CatalogProduct = {
@@ -254,104 +262,112 @@ export async function searchCatalogProducts(
 }
 
 /* ------------------------------------------------------------------ */
-/* Collection slug mapping                                            */
+/* CMS collection / menu / offer / gift / occasion product resolution   */
 /* ------------------------------------------------------------------ */
 
-export type CollectionSlug =
-  | "women"
-  | "men"
-  | "kids"
-  | "offers"
-  | "gifts"
-  | "wedding"
-  | "anniversary"
-  | "engagement"
-  | "festive"
-  | "heritage-bridal"
-  | "daily-wear"
-  | "birthday"
-  | string;
+type CmsProductResolution = { matched: boolean; ids: string[] };
 
-type SlugRule = (product: CatalogProduct) => boolean;
+/**
+ * Resolve admin-curated product ids for a marketing slug. Order is preserved
+ * from the first CMS source that yields a non-empty list, in priority:
+ * collections → menu categories → offers → gift collections → occasions.
+ *
+ * If a CMS entity exists but has zero linked products, returns `{ matched:
+ * true, ids: [] }` so callers render an empty grid (no heuristic fallback).
+ * If no CMS row matches the slug at all, returns `{ matched: false }`.
+ */
+async function resolveCmsAttachedProductIds(slug: string): Promise<CmsProductResolution> {
+  const key = slug.trim().toLowerCase();
+  if (!key) return { matched: false, ids: [] };
 
-function includesAny(haystack: string, needles: string[]): boolean {
-  if (!haystack) return false;
-  const value = haystack.toLowerCase();
-  return needles.some((needle) => value.includes(needle));
-}
+  let collection: Awaited<ReturnType<typeof getCollectionBySlug>> = null;
+  try {
+    collection = await getCollectionBySlug(key);
+  } catch (error) {
+    if (!(error instanceof ApiError && error.status === 404)) {
+      console.warn("[productCatalog] collection by slug failed", error);
+    }
+  }
+  const collectionIds = collection?.products?.map((p) => p.id) ?? [];
+  if (collectionIds.length > 0) {
+    return { matched: true, ids: collectionIds };
+  }
 
-const MEN_NEEDLES = ["men", "him", "male", "gent"];
-const WOMEN_NEEDLES = ["women", "her", "ladies", "female"];
-const KIDS_NEEDLES = ["kid", "infant", "child", "baby"];
+  let menuMatch:
+    | Awaited<ReturnType<typeof getMenuCategories>>[number]
+    | undefined;
+  let offerMatch:
+    | Awaited<ReturnType<typeof getOffers>>[number]
+    | undefined;
+  let giftMatch:
+    | Awaited<ReturnType<typeof getGiftCollections>>[number]
+    | undefined;
+  let occasionMatch:
+    | Awaited<ReturnType<typeof getOccasions>>[number]
+    | undefined;
 
-function isWomenProduct(product: CatalogProduct): boolean {
-  if (includesAny(product.gender, WOMEN_NEEDLES)) return true;
-  if (includesAny(product.gender, MEN_NEEDLES)) return false;
-  if (includesAny(product.gender, KIDS_NEEDLES)) return false;
-  if (includesAny(product.category, KIDS_NEEDLES)) return false;
-  if (includesAny(product.category, MEN_NEEDLES)) return false;
-  if (includesAny(product.collectionName, WOMEN_NEEDLES)) return true;
-  // Default catalogue is feminine when nothing else matches.
-  return true;
-}
+  try {
+    const [menu, offers, gifts, occasions] = await Promise.all([
+      getMenuCategories(),
+      getOffers(),
+      getGiftCollections(),
+      getOccasions(),
+    ]);
 
-function isMenProduct(product: CatalogProduct): boolean {
-  if (includesAny(product.gender, MEN_NEEDLES)) return true;
-  if (includesAny(product.category, MEN_NEEDLES)) return true;
-  if (includesAny(product.collectionName, MEN_NEEDLES)) return true;
-  return false;
-}
+    menuMatch = menu.find((row) => (row.slug ?? "").toLowerCase() === key);
+    const menuIds = menuMatch?.products?.map((p) => p.id) ?? [];
+    if (menuIds.length > 0) return { matched: true, ids: menuIds };
 
-function isKidsProduct(product: CatalogProduct): boolean {
-  if (includesAny(product.gender, KIDS_NEEDLES)) return true;
-  if (includesAny(product.category, KIDS_NEEDLES)) return true;
-  if (includesAny(product.collectionName, KIDS_NEEDLES)) return true;
-  return false;
-}
+    offerMatch = offers.find((row) => (row.slug ?? "").toLowerCase() === key);
+    const offerIds = offerMatch?.products?.map((p) => p.id) ?? [];
+    if (offerIds.length > 0) return { matched: true, ids: offerIds };
 
-function hasOccasion(product: CatalogProduct, needles: string[]): boolean {
-  return (
-    includesAny(product.occasion, needles) ||
-    includesAny(product.collectionName, needles)
+    giftMatch = gifts.find((row) => (row.slug ?? "").toLowerCase() === key);
+    const giftIds = giftMatch?.products?.map((p) => p.id) ?? [];
+    if (giftIds.length > 0) return { matched: true, ids: giftIds };
+
+    occasionMatch = occasions.find(
+      (row) =>
+        (row.collection_slug ?? "").toLowerCase() === key ||
+        ((row as { slug?: string | null }).slug ?? "").toLowerCase() === key,
+    );
+    const occasionIds = occasionMatch?.products?.map((p) => p.id) ?? [];
+    if (occasionIds.length > 0) return { matched: true, ids: occasionIds };
+  } catch (error) {
+    console.warn("[productCatalog] admin CMS lookup failed", error);
+  }
+
+  const hadEntity = Boolean(
+    collection ||
+      menuMatch ||
+      offerMatch ||
+      giftMatch ||
+      occasionMatch,
   );
+  if (hadEntity) {
+    return { matched: true, ids: [] };
+  }
+
+  return { matched: false, ids: [] };
 }
 
-const COLLECTION_RULES: Record<string, SlugRule> = {
-  women: (p) => isWomenProduct(p),
-  men: (p) => isMenProduct(p),
-  kids: (p) => isKidsProduct(p),
-  offers: (p) => (p.discountPercentage ?? 0) > 0,
-  gifts: () => true,
-  wedding: (p) => hasOccasion(p, ["wedding", "bridal"]),
-  anniversary: (p) => hasOccasion(p, ["anniversary"]),
-  engagement: (p) => hasOccasion(p, ["engagement"]),
-  festive: (p) => hasOccasion(p, ["festive", "festival", "diwali"]),
-  "heritage-bridal": (p) => hasOccasion(p, ["bridal", "heritage", "wedding"]),
-  "daily-wear": (p) =>
-    hasOccasion(p, ["daily", "office", "everyday", "casual"]),
-  birthday: (p) => hasOccasion(p, ["birthday"]),
-};
-
-/** Resolves the relevant catalog subset for a marketing collection slug. */
-export function selectCollectionProducts(
-  products: CatalogProduct[],
-  slug: string,
-): CatalogProduct[] {
-  const normalised = slug.trim().toLowerCase();
-  const rule = COLLECTION_RULES[normalised];
-  const list = rule ? products.filter(rule) : products.slice();
-  // Fallback: if a rule yields zero results, show the full active catalog so
-  // the screen never breaks. The user can still navigate to product details
-  // from any item that the admin has published.
-  if (list.length === 0) return products.slice();
-  return list;
-}
-
-/** Async helper — pulls latest catalog and filters by slug. */
+/** Curated products for a collection / menu slug — Admin Panel order only. */
 export async function fetchProductsForCollection(
   slug: string,
   opts?: { force?: boolean },
 ): Promise<CatalogProduct[]> {
   const products = await fetchProductCatalog(opts);
-  return selectCollectionProducts(products, slug);
+  const { matched, ids } = await resolveCmsAttachedProductIds(slug);
+
+  if (!matched) {
+    return [];
+  }
+
+  const byId = new Map(products.map((product) => [product.id, product]));
+  const ordered: CatalogProduct[] = [];
+  for (const id of ids) {
+    const hit = byId.get(id);
+    if (hit) ordered.push(hit);
+  }
+  return ordered;
 }

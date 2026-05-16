@@ -1,58 +1,60 @@
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { useFocusEffect } from '@react-navigation/native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useMemo, useState } from 'react';
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import { useFocusEffect } from "@react-navigation/native";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import React, { useCallback, useMemo, useState } from "react";
 import {
-  FlatList,
-  Modal,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+    FlatList,
+    Modal,
+    Platform,
+    Pressable,
+    StyleSheet,
+    Text,
+    TextInput,
+    View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import {
-  BoutiqueSortDropdown,
-  BOUTIQUE_SORT_OPTIONS,
-  type BoutiqueSortOptionId,
-} from '@/components/boutiques/BoutiqueSortDropdown';
-import { BoutiqueSkeletonLoader } from '@/components/loaders';
-import { useNetworkReachable } from '@/hooks/useNetworkReachable';
-import { useUserLocation } from '@/hooks/useUserLocation';
-import { BoutiqueStatusBadge } from '@/lib/components/common/BoutiqueStatusBadge';
-import { RemoteImage } from '@/lib/components/common/RemoteImage';
-import type { BoutiqueUiListItem } from '@/lib/boutiques/boutiqueUi';
+    BOUTIQUE_SORT_OPTIONS,
+    BoutiqueSortDropdown,
+    type BoutiqueSortOptionId,
+} from "@/components/boutiques/BoutiqueSortDropdown";
+import { BoutiqueSkeletonLoader } from "@/components/loaders";
+import { useNetworkReachable } from "@/hooks/useNetworkReachable";
+import { useUserLocation } from "@/hooks/useUserLocation";
+import type { BoutiqueUiListItem } from "@/lib/boutiques/boutiqueUi";
+import { BoutiqueStatusBadge } from "@/lib/components/common/BoutiqueStatusBadge";
+import { RemoteImage } from "@/lib/components/common/RemoteImage";
+import { fetchBoutiquesUi } from "@/lib/services/catalogApi";
 import {
-  boutiqueHasCoordinates,
-  formatBoutiqueDistanceLine,
-} from '@/lib/utils/formatBoutiqueDistance';
-import { fetchBoutiquesUi } from '@/lib/services/catalogApi';
-import { applyUserLocationToBoutiqueList } from '@/services/boutique.service';
-import { ApiError } from '@/services/api';
-import { BottomTabBar } from '@/src/components/navigation/BottomTabBar';
-import { fontSizes, spacing } from '@/src/constants/theme';
+    boutiqueHasCoordinates,
+    formatBoutiqueDistanceLine,
+} from "@/lib/utils/formatBoutiqueDistance";
+import { ApiError } from "@/services/api";
+import { applyUserLocationToBoutiqueList } from "@/services/boutique.service";
+import { BottomTabBar } from "@/src/components/navigation/BottomTabBar";
+import { fontSizes, spacing } from "@/src/constants/theme";
 
 type Boutique = BoutiqueUiListItem;
 
-const NAVY = '#0D1B2A';
-const MUTED = '#6B7280';
-const CHIP_BG = '#F2F2F2';
-const SCREEN_BG = '#F5F5F5';
+const NAVY = "#0D1B2A";
+const MUTED = "#6B7280";
+const CHIP_BG = "#F2F2F2";
+const SCREEN_BG = "#F5F5F5";
 
-const DISTANCE_OPTIONS = ['1 km', '5 km', '10 km'] as const;
+const DISTANCE_OPTIONS = ["1 km", "5 km", "10 km"] as const;
 
-function parseSectionType(raw: string | string[] | undefined): string | undefined {
+function parseSectionType(
+  raw: string | string[] | undefined,
+): string | undefined {
   if (raw == null) return undefined;
   const v = Array.isArray(raw) ? raw[0] : raw;
-  return v === 'featured' || v === 'nearest' ? v : undefined;
+  return v === "featured" || v === "nearest" ? v : undefined;
 }
 
 function parseDistanceKm(label: string | null): number | null {
   if (!label) return null;
-  const n = parseInt(label.replace(/\D/g, ''), 10);
+  const n = parseInt(label.replace(/\D/g, ""), 10);
   return Number.isFinite(n) ? n : null;
 }
 
@@ -64,31 +66,36 @@ function matchesSearch(item: Boutique, q: string): boolean {
     item.location,
     item.tag,
     item.description,
-    item.latestCollectionLabel ?? '',
+    item.latestCollectionLabel ?? "",
     ...item.tags,
   ]
-    .join(' ')
+    .join(" ")
     .toLowerCase();
   return hay.includes(s);
 }
 
-function applySortOption(list: Boutique[], sort: BoutiqueSortOptionId | null): Boutique[] {
+function applySortOption(
+  list: Boutique[],
+  sort: BoutiqueSortOptionId | null,
+): Boutique[] {
   const sorted = [...list];
   /** `null` = nearest-first (default). */
-  const effective: BoutiqueSortOptionId = sort ?? 'NEAREST';
+  const effective: BoutiqueSortOptionId = sort ?? "NEAREST";
 
   switch (effective) {
-    case 'NEAREST':
+    case "NEAREST":
       sorted.sort((a, b) => {
         const da = a.distanceKm ?? Number.POSITIVE_INFINITY;
         const db = b.distanceKm ?? Number.POSITIVE_INFINITY;
         return da - db;
       });
       break;
-    case 'HIGHEST_RATED':
-      sorted.sort((a, b) => b.rating - a.rating || b.reviewsCount - a.reviewsCount);
+    case "HIGHEST_RATED":
+      sorted.sort(
+        (a, b) => b.rating - a.rating || b.reviewsCount - a.reviewsCount,
+      );
       break;
-    case 'OPEN_NOW':
+    case "OPEN_NOW":
       sorted.sort((a, b) => {
         if (a.openNow !== b.openNow) return a.openNow ? -1 : 1;
         const da = a.distanceKm ?? Number.POSITIVE_INFINITY;
@@ -96,8 +103,10 @@ function applySortOption(list: Boutique[], sort: BoutiqueSortOptionId | null): B
         return da - db;
       });
       break;
-    case 'MOST_REVIEWED':
-      sorted.sort((a, b) => b.reviewsCount - a.reviewsCount || b.rating - a.rating);
+    case "MOST_REVIEWED":
+      sorted.sort(
+        (a, b) => b.reviewsCount - a.reviewsCount || b.rating - a.rating,
+      );
       break;
     default:
       break;
@@ -125,9 +134,11 @@ export default function BoutiquesScreen() {
   const { type } = useLocalSearchParams<{ type?: string | string[] }>();
   const sectionType = parseSectionType(type);
 
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [rawBoutiques, setRawBoutiques] = useState<Boutique[]>([]);
-  const [selectedSort, setSelectedSort] = useState<BoutiqueSortOptionId | null>(null);
+  const [selectedSort, setSelectedSort] = useState<BoutiqueSortOptionId | null>(
+    null,
+  );
   const [selectedDistance, setSelectedDistance] = useState<string | null>(null);
   const [filterVisible, setFilterVisible] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -153,8 +164,9 @@ export default function BoutiquesScreen() {
       setRawBoutiques(rows);
       setError(null);
     } catch (err) {
-      console.error('Failed to load boutiques', err);
-      const message = err instanceof ApiError ? err.message : 'Unable to load boutiques';
+      console.error("Failed to load boutiques", err);
+      const message =
+        err instanceof ApiError ? err.message : "Unable to load boutiques";
       setError(message);
     } finally {
       setLoading(false);
@@ -168,10 +180,14 @@ export default function BoutiquesScreen() {
     }, [loadBoutiques]),
   );
 
-  const maxDistanceKm = useMemo(() => parseDistanceKm(selectedDistance), [selectedDistance]);
+  const maxDistanceKm = useMemo(
+    () => parseDistanceKm(selectedDistance),
+    [selectedDistance],
+  );
 
   const filteredBoutiques = useMemo(
-    () => filterAndSort(boutiquesData, searchQuery, maxDistanceKm, selectedSort),
+    () =>
+      filterAndSort(boutiquesData, searchQuery, maxDistanceKm, selectedSort),
     [boutiquesData, searchQuery, maxDistanceKm, selectedSort],
   );
 
@@ -182,7 +198,10 @@ export default function BoutiquesScreen() {
 
   const openProfile = useCallback(
     (item: Boutique) => {
-      router.push({ pathname: '/(app)/boutique-profile', params: { id: item.id } });
+      router.push({
+        pathname: "/(app)/boutique-profile",
+        params: { id: item.id },
+      });
     },
     [router],
   );
@@ -193,7 +212,11 @@ export default function BoutiquesScreen() {
         <View style={styles.card}>
           <Pressable onPress={() => openProfile(item)} style={styles.cardMain}>
             <View style={styles.cardImageWrap}>
-              <RemoteImage uri={item.image ?? undefined} fallbackTint="#c4b28f" style={styles.cardImage} />
+              <RemoteImage
+                uri={item.image ?? undefined}
+                fallbackTint="#c4b28f"
+                style={styles.cardImage}
+              />
               <View style={styles.cardStatusCorner} pointerEvents="none">
                 <BoutiqueStatusBadge
                   isOpen={item.openNow}
@@ -206,7 +229,10 @@ export default function BoutiquesScreen() {
               </View>
               {item.logoImage ? (
                 <View style={styles.cardLogoRing} pointerEvents="none">
-                  <RemoteImage uri={item.logoImage} style={styles.cardLogoImage} />
+                  <RemoteImage
+                    uri={item.logoImage}
+                    style={styles.cardLogoImage}
+                  />
                 </View>
               ) : null}
             </View>
@@ -216,27 +242,39 @@ export default function BoutiquesScreen() {
             <Text style={styles.name}>{item.name}</Text>
             <Text style={styles.meta}>
               ★ {item.rating.toFixed(1)} (
-              {item.reviewsCount > 0 ? `${item.reviewsCount} reviews` : 'No reviews yet'}) ·{' '}
+              {item.reviewsCount > 0
+                ? `${item.reviewsCount} reviews`
+                : "No reviews yet"}
+              ) ·{" "}
               {formatBoutiqueDistanceLine({
                 distanceKm: item.distanceKm,
                 locationLoading,
                 hasBoutiqueCoords: boutiqueHasCoordinates(item),
                 permission: locationPermission,
                 userLocationGpsFailed: locationGpsFailed,
-              })}{' '}
+              })}{" "}
               {item.location}
             </Text>
-            {item.hoursLabel ? <Text style={styles.hoursLine}>{item.hoursLabel}</Text> : null}
+            {item.hoursLabel ? (
+              <Text style={styles.hoursLine}>{item.hoursLabel}</Text>
+            ) : null}
             <Text style={styles.collectionLine}>LATEST COLLECTION</Text>
             <Text style={styles.collectionValue} numberOfLines={2}>
-              {item.latestCollectionLabel ?? 'Assigned collections & new arrivals'}
+              {item.latestCollectionLabel ??
+                "Assigned collections & new arrivals"}
             </Text>
           </Pressable>
           <View style={styles.buttonRow}>
-            <Pressable style={styles.primaryBtn} onPress={() => openProfile(item)}>
+            <Pressable
+              style={styles.primaryBtn}
+              onPress={() => openProfile(item)}
+            >
               <Text style={styles.primaryBtnText}>Book Visit</Text>
             </Pressable>
-            <Pressable style={styles.secondaryBtn} onPress={() => openProfile(item)}>
+            <Pressable
+              style={styles.secondaryBtn}
+              onPress={() => openProfile(item)}
+            >
               <Text style={styles.secondaryBtnText}>View Profile</Text>
             </Pressable>
           </View>
@@ -251,25 +289,40 @@ export default function BoutiquesScreen() {
       <View style={styles.header}>
         <Text style={styles.heading}>Boutiques</Text>
         {reachable === false ? (
-          <Text style={styles.offlineHint}>No connection. Confirm Wi‑Fi and LAN API URL (EXPO_PUBLIC_API_URL).</Text>
+          <Text style={styles.offlineHint}>
+            No connection. Confirm Wi‑Fi and LAN API URL (EXPO_PUBLIC_API_URL).
+          </Text>
         ) : null}
-        {loading ? <Text style={styles.sectionHint}>Loading boutiques...</Text> : null}
+        {loading ? (
+          <Text style={styles.sectionHint}>Loading boutiques...</Text>
+        ) : null}
         {error && !loading ? (
           <View style={styles.errorBanner}>
             <Text style={styles.errorText}>{error}</Text>
-            <Pressable accessibilityRole="button" onPress={() => void loadBoutiques()} style={styles.retryBtn}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => void loadBoutiques()}
+              style={styles.retryBtn}
+            >
               <Text style={styles.retryBtnText}>Retry</Text>
             </Pressable>
           </View>
         ) : null}
         {sectionType ? (
           <Text style={styles.sectionHint}>
-            {sectionType === 'featured' ? 'Featured selection' : 'Nearest locations'}
+            {sectionType === "featured"
+              ? "Featured selection"
+              : "Nearest locations"}
           </Text>
         ) : null}
 
         <View style={styles.locationRow}>
-          <MaterialIcons name="location-on" size={20} color="#8B7355" style={styles.locationIcon} />
+          <MaterialIcons
+            name="location-on"
+            size={20}
+            color="#8B7355"
+            style={styles.locationIcon}
+          />
           <Text style={styles.locationText} numberOfLines={1}>
             Karol Bagh, Delhi
           </Text>
@@ -307,7 +360,10 @@ export default function BoutiquesScreen() {
             {` Boutiques`}
           </Text>
           <View style={styles.sortDropdownWrap}>
-            <BoutiqueSortDropdown value={selectedSort} onChange={setSelectedSort} />
+            <BoutiqueSortDropdown
+              value={selectedSort}
+              onChange={setSelectedSort}
+            />
           </View>
         </View>
       </View>
@@ -325,12 +381,12 @@ export default function BoutiquesScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={["top"]}>
       <FlatList
         style={styles.listFlex}
         data={filteredBoutiques}
         keyExtractor={(item) => item.id}
-        extraData={`${searchQuery}-${selectedSort}-${selectedDistance}-${locationLoading}-${locationPermission}-${userCoords?.lat ?? ''}-${userCoords?.lng ?? ''}-${locationGpsFailed}`}
+        extraData={`${searchQuery}-${selectedSort}-${selectedDistance}-${locationLoading}-${locationPermission}-${userCoords?.lat ?? ""}-${userCoords?.lng ?? ""}-${locationGpsFailed}`}
         contentContainerStyle={styles.content}
         ListHeaderComponent={ListHeader}
         renderItem={renderItem}
@@ -342,12 +398,16 @@ export default function BoutiquesScreen() {
           ) : !error && boutiquesData.length > 0 && hasUserAppliedFilters ? (
             <View style={styles.empty}>
               <Text style={styles.emptyTitle}>No boutiques match</Text>
-              <Text style={styles.emptySub}>Try adjusting search, distance, or sort.</Text>
+              <Text style={styles.emptySub}>
+                Try adjusting search, distance, or sort.
+              </Text>
             </View>
           ) : !error && boutiquesData.length === 0 ? (
             <View style={styles.empty}>
               <Text style={styles.emptyTitle}>No boutiques found</Text>
-              <Text style={styles.emptySub}>Pull to refresh or tap Retry above.</Text>
+              <Text style={styles.emptySub}>
+                Pull to refresh or tap Retry above.
+              </Text>
             </View>
           ) : null
         }
@@ -361,7 +421,11 @@ export default function BoutiquesScreen() {
         onRequestClose={() => setFilterVisible(false)}
       >
         <View style={styles.modalRoot}>
-          <Pressable style={styles.modalBackdrop} onPress={() => setFilterVisible(false)} accessibilityLabel="Close" />
+          <Pressable
+            style={styles.modalBackdrop}
+            onPress={() => setFilterVisible(false)}
+            accessibilityLabel="Close"
+          />
           <View style={styles.bottomSheet}>
             <View style={styles.sheetHandle} />
             <Text style={styles.sheetTitle}>Filters</Text>
@@ -375,30 +439,63 @@ export default function BoutiquesScreen() {
                   onPress={() => setSelectedDistance(selected ? null : d)}
                   style={styles.sheetRow}
                 >
-                  <Text style={[styles.sheetRowText, selected && styles.sheetRowTextSelected]}>{d}</Text>
-                  {selected ? <MaterialIcons name="check" size={20} color={NAVY} /> : null}
+                  <Text
+                    style={[
+                      styles.sheetRowText,
+                      selected && styles.sheetRowTextSelected,
+                    ]}
+                  >
+                    {d}
+                  </Text>
+                  {selected ? (
+                    <MaterialIcons name="check" size={20} color={NAVY} />
+                  ) : null}
                 </Pressable>
               );
             })}
-            <Pressable onPress={() => setSelectedDistance(null)} style={styles.clearDistance}>
-              <Text style={styles.clearDistanceText}>Clear distance filter</Text>
+            <Pressable
+              onPress={() => setSelectedDistance(null)}
+              style={styles.clearDistance}
+            >
+              <Text style={styles.clearDistanceText}>
+                Clear distance filter
+              </Text>
             </Pressable>
 
             <Text style={styles.sheetSectionTitle}>Sort by</Text>
             {BOUTIQUE_SORT_OPTIONS.map((opt) => {
               const selected = selectedSort === opt.id;
               return (
-                <Pressable key={opt.id} onPress={() => setSelectedSort(opt.id)} style={styles.sheetRow}>
-                  <Text style={[styles.sheetRowText, selected && styles.sheetRowTextSelected]}>{opt.label}</Text>
-                  {selected ? <MaterialIcons name="check" size={20} color={NAVY} /> : null}
+                <Pressable
+                  key={opt.id}
+                  onPress={() => setSelectedSort(opt.id)}
+                  style={styles.sheetRow}
+                >
+                  <Text
+                    style={[
+                      styles.sheetRowText,
+                      selected && styles.sheetRowTextSelected,
+                    ]}
+                  >
+                    {opt.label}
+                  </Text>
+                  {selected ? (
+                    <MaterialIcons name="check" size={20} color={NAVY} />
+                  ) : null}
                 </Pressable>
               );
             })}
-            <Pressable onPress={() => setSelectedSort(null)} style={styles.clearDistance}>
+            <Pressable
+              onPress={() => setSelectedSort(null)}
+              style={styles.clearDistance}
+            >
               <Text style={styles.clearDistanceText}>Clear sort</Text>
             </Pressable>
 
-            <Pressable style={styles.applyBtn} onPress={() => setFilterVisible(false)}>
+            <Pressable
+              style={styles.applyBtn}
+              onPress={() => setFilterVisible(false)}
+            >
               <Text style={styles.applyText}>Apply filters</Text>
             </Pressable>
           </View>
@@ -410,7 +507,7 @@ export default function BoutiquesScreen() {
 
 const SEARCH_SHADOW = Platform.select({
   ios: {
-    shadowColor: '#0f172a',
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.05,
     shadowRadius: 16,
@@ -422,71 +519,91 @@ const SEARCH_SHADOW = Platform.select({
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: SCREEN_BG },
   listFlex: { flex: 1 },
-  content: { paddingHorizontal: spacing.lg, paddingBottom: 100, flexGrow: 1, paddingTop: 4 },
+  content: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: 100,
+    flexGrow: 1,
+    paddingTop: 4,
+  },
   header: { marginBottom: spacing.lg, paddingTop: 6 },
   heading: {
     fontSize: 22,
-    fontWeight: '700',
+    fontWeight: "700",
     color: NAVY,
     letterSpacing: -0.3,
   },
-  sectionHint: { marginTop: 4, fontSize: fontSizes.xs, color: MUTED, fontWeight: '600' },
+  sectionHint: {
+    marginTop: 4,
+    fontSize: fontSizes.xs,
+    color: MUTED,
+    fontWeight: "600",
+  },
   offlineHint: {
     marginTop: 8,
     fontSize: fontSizes.xs,
-    color: '#92400e',
-    fontWeight: '600',
+    color: "#92400e",
+    fontWeight: "600",
     lineHeight: 16,
   },
   errorBanner: { marginTop: 10, gap: 8 },
-  errorText: { fontSize: fontSizes.xs, color: '#b91c1c', fontWeight: '600', lineHeight: 16 },
+  errorText: {
+    fontSize: fontSizes.xs,
+    color: "#b91c1c",
+    fontWeight: "600",
+    lineHeight: 16,
+  },
   retryBtn: {
-    alignSelf: 'flex-start',
+    alignSelf: "flex-start",
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 8,
     backgroundColor: NAVY,
   },
-  retryBtnText: { color: '#fff', fontWeight: '700', fontSize: fontSizes.xs },
+  retryBtnText: { color: "#fff", fontWeight: "700", fontSize: fontSizes.xs },
   emptySkeleton: { paddingTop: spacing.sm },
   locationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginTop: 10,
     gap: 6,
   },
   locationIcon: { marginRight: 2 },
-  locationText: { flex: 1, fontSize: fontSizes.sm, color: '#374151', fontWeight: '500' },
+  locationText: {
+    flex: 1,
+    fontSize: fontSizes.sm,
+    color: "#374151",
+    fontWeight: "500",
+  },
   changeLink: {
     fontSize: 12,
-    fontWeight: '700',
-    color: '#2563EB',
+    fontWeight: "700",
+    color: "#2563EB",
     letterSpacing: 0.6,
   },
   searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
     borderRadius: 999,
     marginTop: 18,
     paddingHorizontal: 18,
     paddingVertical: 14,
     gap: 12,
     borderWidth: 1,
-    borderColor: 'rgba(15, 27, 42, 0.05)',
+    borderColor: "rgba(15, 27, 42, 0.05)",
   },
   searchInput: {
     flex: 1,
     fontSize: fontSizes.sm,
     color: NAVY,
     paddingVertical: 0,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   filterIconBtn: { padding: 4 },
   metaRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginTop: 16,
     marginBottom: 4,
     gap: 12,
@@ -498,18 +615,18 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   metaCount: {
-    fontWeight: '700',
+    fontWeight: "700",
     color: NAVY,
   },
   sortDropdownWrap: { flexShrink: 0 },
   card: {
     borderRadius: 16,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     padding: spacing.md,
     marginBottom: 20,
     ...Platform.select({
       ios: {
-        shadowColor: '#0f172a',
+        shadowColor: "#0f172a",
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.07,
         shadowRadius: 12,
@@ -518,37 +635,37 @@ const styles = StyleSheet.create({
       default: {},
     }),
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(15, 27, 42, 0.06)',
+    borderColor: "rgba(15, 27, 42, 0.06)",
   },
   cardMain: { borderRadius: 12 },
   cardImageWrap: {
-    position: 'relative',
+    position: "relative",
     marginBottom: spacing.sm,
   },
-  cardImage: { height: 180, borderRadius: 12, overflow: 'hidden' },
+  cardImage: { height: 180, borderRadius: 12, overflow: "hidden" },
   cardStatusCorner: {
-    position: 'absolute',
+    position: "absolute",
     top: 10,
     right: 10,
-    alignItems: 'flex-end',
+    alignItems: "flex-end",
     gap: 4,
-    maxWidth: '55%',
+    maxWidth: "55%",
   },
   cardLogoRing: {
-    position: 'absolute',
+    position: "absolute",
     bottom: -14,
-    left: '50%',
+    left: "50%",
     marginLeft: -36,
     width: 72,
     height: 72,
     borderRadius: 36,
     borderWidth: 3,
-    borderColor: '#fff',
-    backgroundColor: '#fff',
-    overflow: 'hidden',
+    borderColor: "#fff",
+    backgroundColor: "#fff",
+    overflow: "hidden",
     ...Platform.select({
       ios: {
-        shadowColor: '#000',
+        shadowColor: "#000",
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.15,
         shadowRadius: 6,
@@ -558,65 +675,84 @@ const styles = StyleSheet.create({
     }),
   },
   cardLogoImage: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
     borderRadius: 36,
   },
   cardHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: spacing.xs,
     marginTop: spacing.md,
   },
-  tag: { fontSize: 9, letterSpacing: 1, color: '#6B7280', fontWeight: '600' },
-  name: { fontSize: fontSizes.md, fontWeight: '700', color: NAVY, marginTop: spacing.xs },
+  tag: { fontSize: 9, letterSpacing: 1, color: "#6B7280", fontWeight: "600" },
+  name: {
+    fontSize: fontSizes.md,
+    fontWeight: "700",
+    color: NAVY,
+    marginTop: spacing.xs,
+  },
   meta: { marginTop: 4, fontSize: fontSizes.xs, color: MUTED, lineHeight: 18 },
-  hoursLine: { marginTop: 4, fontSize: fontSizes.xs, color: '#374151', fontWeight: '600' },
+  hoursLine: {
+    marginTop: 4,
+    fontSize: fontSizes.xs,
+    color: "#374151",
+    fontWeight: "600",
+  },
   collectionLine: {
     marginTop: 8,
     fontSize: 9,
     letterSpacing: 0.9,
-    color: '#9CA3AF',
-    fontWeight: '600',
+    color: "#9CA3AF",
+    fontWeight: "600",
   },
   collectionValue: {
     marginTop: 4,
     fontSize: fontSizes.xs,
     color: NAVY,
-    fontWeight: '600',
+    fontWeight: "600",
     lineHeight: 18,
   },
-  buttonRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  buttonRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.md },
   primaryBtn: {
     flex: 1,
     backgroundColor: NAVY,
     borderRadius: 12,
     paddingVertical: 12,
-    alignItems: 'center',
+    alignItems: "center",
   },
-  primaryBtnText: { fontSize: fontSizes.xs, color: '#fff', fontWeight: '700' },
+  primaryBtnText: { fontSize: fontSizes.xs, color: "#fff", fontWeight: "700" },
   secondaryBtn: {
     flex: 1,
     backgroundColor: CHIP_BG,
     borderRadius: 12,
     paddingVertical: 12,
-    alignItems: 'center',
+    alignItems: "center",
   },
-  secondaryBtnText: { fontSize: fontSizes.xs, color: NAVY, fontWeight: '700' },
-  empty: { paddingVertical: spacing['2xl'], alignItems: 'center', paddingHorizontal: spacing.lg },
-  emptyTitle: { fontSize: fontSizes.md, fontWeight: '700', color: NAVY },
-  emptySub: { marginTop: 8, fontSize: fontSizes.sm, color: MUTED, textAlign: 'center' },
+  secondaryBtnText: { fontSize: fontSizes.xs, color: NAVY, fontWeight: "700" },
+  empty: {
+    paddingVertical: spacing["2xl"],
+    alignItems: "center",
+    paddingHorizontal: spacing.lg,
+  },
+  emptyTitle: { fontSize: fontSizes.md, fontWeight: "700", color: NAVY },
+  emptySub: {
+    marginTop: 8,
+    fontSize: fontSizes.sm,
+    color: MUTED,
+    textAlign: "center",
+  },
   modalRoot: {
     flex: 1,
-    justifyContent: 'flex-end',
+    justifyContent: "flex-end",
   },
   modalBackdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    backgroundColor: "rgba(15, 23, 42, 0.45)",
   },
   bottomSheet: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: Platform.select({ ios: 34, default: 24 }),
@@ -624,41 +760,41 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
   },
   sheetHandle: {
-    alignSelf: 'center',
+    alignSelf: "center",
     width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: "#E5E7EB",
     marginBottom: 16,
   },
   sheetTitle: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: "700",
     color: NAVY,
     marginBottom: 16,
   },
   sheetSectionTitle: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: "700",
     color: MUTED,
     letterSpacing: 0.8,
     marginTop: 8,
     marginBottom: 10,
   },
   sheetRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#F0F0F0',
+    borderBottomColor: "#F0F0F0",
   },
   sheetRowText: {
     fontSize: 16,
-    color: '#374151',
+    color: "#374151",
   },
   sheetRowTextSelected: {
-    fontWeight: '700',
+    fontWeight: "700",
     color: NAVY,
   },
   clearDistance: {
@@ -667,19 +803,19 @@ const styles = StyleSheet.create({
   },
   clearDistanceText: {
     fontSize: 13,
-    fontWeight: '600',
-    color: '#2563EB',
+    fontWeight: "600",
+    color: "#2563EB",
   },
   applyBtn: {
     backgroundColor: NAVY,
     paddingVertical: 14,
     borderRadius: 12,
     marginTop: 20,
-    alignItems: 'center',
+    alignItems: "center",
   },
   applyText: {
-    color: '#fff',
-    fontWeight: '600',
+    color: "#fff",
+    fontWeight: "600",
     fontSize: 16,
   },
 });
