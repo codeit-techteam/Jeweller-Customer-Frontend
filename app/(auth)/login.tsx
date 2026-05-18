@@ -14,6 +14,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/context/AuthContext';
+import { appConfig } from '@/lib/appConfig';
 import { ButtonLoader } from '@/components/loaders';
 const BG = '#F7F7F7';
 const NAVY = '#0A1F44';
@@ -28,7 +29,7 @@ function digitsOnly(value: string): string {
   return value.replace(/\D/g, '').slice(0, 10);
 }
 
-const DEV_AUTH_ENABLED = String(process.env.EXPO_PUBLIC_DEV_AUTH).toLowerCase() === 'true';
+const DEV_AUTH_ENABLED = appConfig.devAuth;
 
 export default function LoginScreen() {
   const router = useRouter();

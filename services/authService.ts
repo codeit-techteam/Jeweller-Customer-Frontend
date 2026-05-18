@@ -1,4 +1,5 @@
-import { supabase } from "../lib/supabaseClient";
+import { appConfig } from "../lib/appConfig";
+import { getSupabase } from "../lib/supabaseClient";
 
 export type UserProfile = {
   id: string;
@@ -9,8 +10,17 @@ export type UserProfile = {
   created_at: string;
 };
 
-const DEV_AUTH_ENABLED =
-  String(process.env.EXPO_PUBLIC_DEV_AUTH).toLowerCase() === "true";
+const DEV_AUTH_ENABLED = appConfig.devAuth;
+
+function requireSupabase() {
+  const client = getSupabase();
+  if (!client) {
+    throw new Error(
+      "Supabase is not configured. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY.",
+    );
+  }
+  return client;
+}
 
 function formatIndianPhoneToE164(raw: string): string {
   const digits = raw.replace(/\D/g, "").slice(-10);
@@ -40,6 +50,7 @@ export async function signupUser(
   const phone = cleanPhone(phoneRaw);
   console.log("[DEV_AUTH] Creating user...", { fullName, email, phone });
 
+  const supabase = requireSupabase();
   const { data: existing, error: existsError } = await supabase
     .from("users_profile")
     .select("*")
@@ -85,6 +96,7 @@ export async function loginUser(phoneRaw: string): Promise<UserProfile | null> {
   const phone = cleanPhone(phoneRaw);
   console.log("[DEV_AUTH] Login user:", { phone });
 
+  const supabase = requireSupabase();
   const { data, error } = await supabase
     .from("users_profile")
     .select("*")
@@ -107,6 +119,7 @@ export async function uploadProfileImage(
   userId: string,
   imageUri: string,
 ): Promise<string> {
+  const supabase = requireSupabase();
   const filePath = `profiles/${userId}.jpg`;
   const imageResponse = await fetch(imageUri);
   const fileBuffer = await imageResponse.arrayBuffer();
@@ -146,6 +159,7 @@ export async function updateUserProfile(
     profile_image?: string | null;
   },
 ): Promise<UserProfile> {
+  const supabase = requireSupabase();
   const { data, error } = await supabase
     .from("users_profile")
     .update(updates)
@@ -158,6 +172,7 @@ export async function updateUserProfile(
 }
 
 export async function getUserById(userId: string): Promise<UserProfile | null> {
+  const supabase = requireSupabase();
   const { data, error } = await supabase
     .from("users_profile")
     .select("*")
@@ -174,6 +189,7 @@ export async function getUserById(userId: string): Promise<UserProfile | null> {
 
 export async function sendOTP(rawPhone: string) {
   const phone = formatIndianPhoneToE164(rawPhone);
+  const supabase = requireSupabase();
 
   const { error } = await supabase.auth.signInWithOtp({
     phone,
@@ -199,6 +215,7 @@ export async function verifyOTP(
   options: VerifyOtpOptions = {},
 ) {
   const phone = formatIndianPhoneToE164(rawPhone);
+  const supabase = requireSupabase();
 
   const { data, error } = await supabase.auth.verifyOtp({
     phone,

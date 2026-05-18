@@ -1,4 +1,4 @@
-import { Redirect, Stack } from 'expo-router';
+import { Stack } from 'expo-router';
 import React, { useEffect } from 'react';
 
 import { useAuth } from '@/context/AuthContext';
@@ -9,7 +9,7 @@ import { FullScreenLoader } from '@/components/loaders';
 export default function AppRoutesLayout() {
   const hydrateRecentlyViewed = useRecentlyViewedStore((s) => s.hydrate);
   const initializeWishlist = useWishlistStore((s) => s.initializeForUser);
-  const { isLoggedIn, loading, user } = useAuth();
+  const { loading, user } = useAuth();
 
   useEffect(() => {
     if (!user?.id) return;
@@ -17,14 +17,11 @@ export default function AppRoutesLayout() {
   }, [hydrateRecentlyViewed, initializeWishlist, user?.id]);
 
   useEffect(() => {
-    if (isLoggedIn) return;
+    if (user?.id) return;
     void initializeWishlist(null);
-  }, [initializeWishlist, isLoggedIn]);
+  }, [initializeWishlist, user?.id]);
 
   if (loading) return <FullScreenLoader label="Restoring session..." />;
-  if (!isLoggedIn) {
-    return <Redirect href="/(auth)/login" />;
-  }
 
   return (
     <Stack screenOptions={{ animation: 'fade', contentStyle: { backgroundColor: '#ffffff' } }}>

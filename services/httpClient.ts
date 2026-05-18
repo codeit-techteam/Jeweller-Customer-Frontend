@@ -1,21 +1,11 @@
 import axios, { AxiosError, type AxiosRequestConfig, type AxiosResponse } from 'axios';
 
-import { supabase } from '@/lib/supabaseClient';
+import { appConfig, isApiConfigured, normalizeExpoPublicApiUrl } from '@/lib/appConfig';
+import { getSupabase } from '@/lib/supabaseClient';
 
 import { ApiError } from './apiError';
 
-/**
- * Normalize EXPO_PUBLIC_API_URL so both `http://host:5105` and `http://host:5105/api` work
- * (paths in this app are always `/api/...`).
- */
-export function normalizeExpoPublicApiUrl(raw: string | undefined): string {
-  if (!raw?.trim()) return '';
-  let s = raw.trim().replace(/\/+$/, '');
-  if (s.toLowerCase().endsWith('/api')) {
-    s = s.slice(0, -4).replace(/\/+$/, '');
-  }
-  return s;
-}
+export { normalizeExpoPublicApiUrl };
 
 const REQUEST_TIMEOUT_MS = 15_000;
 const MAX_RETRIES = 2;
@@ -65,7 +55,7 @@ function axiosErrorToApiError(error: unknown): ApiError {
 type ApiEnvelope<T> = { success?: boolean; message?: string; data: T };
 
 export function getResolvedApiOrigin(): string {
-  return normalizeExpoPublicApiUrl(process.env.EXPO_PUBLIC_API_URL);
+  return appConfig.apiUrl;
 }
 
 export const API_URL = getResolvedApiOrigin();
@@ -80,8 +70,8 @@ const axiosInstance = axios.create({
 axiosInstance.interceptors.request.use(
   async (config) => {
     const origin = getResolvedApiOrigin();
-    if (!origin) {
-      throw new ApiError('Missing EXPO_PUBLIC_API_URL in frontend/.env', 'CONFIG');
+    if (!isApiConfigured()) {
+      throw new ApiError('Missing EXPO_PUBLIC_API_URL. Configure it in EAS environment variables for preview builds.', 'CONFIG');
     }
     config.baseURL = origin;
 
@@ -96,13 +86,18 @@ axiosInstance.interceptors.request.use(
     }
 
     try {
-      const session = await supabase.auth.getSession();
-      const token = session.data.session?.access_token;
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
+      const client = getSupabase();
+      if (client) {
+        const session = await client.auth.getSession();
+        const token = session.data.session?.access_token;
+        if (token) {
+          config.headers.Authorization = `Bearer ${token}`;
+        }
       }
-    } catch {
-      // non-fatal: continue without auth header
+    } catch (e) {
+      if (__DEV__) {
+        console.warn('[api] could not attach auth header', e);
+      }
     }
 
     return config;
@@ -128,8 +123,8 @@ async function parseEnvelope<T>(response: AxiosResponse<ApiEnvelope<T> | unknown
 
 export async function apiRequest<T>(config: AxiosRequestConfig, extraHeaders?: Record<string, string>): Promise<T> {
   const origin = getResolvedApiOrigin();
-  if (!origin) {
-    throw new ApiError('Missing EXPO_PUBLIC_API_URL in frontend/.env', 'CONFIG');
+  if (!isApiConfigured()) {
+    throw new ApiError('Missing EXPO_PUBLIC_API_URL. Configure it in EAS environment variables for preview builds.', 'CONFIG');
   }
 
   let lastError: unknown;

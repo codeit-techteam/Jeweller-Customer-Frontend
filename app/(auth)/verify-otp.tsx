@@ -20,6 +20,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/context/AuthContext';
+import { appConfig } from '@/lib/appConfig';
 import { ButtonLoader } from '@/components/loaders';
 
 const BG = '#F6F7F9';
@@ -31,7 +32,7 @@ const BADGE_TEXT = '#555555';
 const BORDER_LIGHT = '#EEEEEE';
 const OTP_LEN = 6;
 const RESEND_SECONDS = 30;
-const DEV_AUTH_ENABLED = String(process.env.EXPO_PUBLIC_DEV_AUTH).toLowerCase() === 'true';
+const DEV_AUTH_ENABLED = appConfig.devAuth;
 
 function paramStr(raw: string | string[] | undefined): string {
   if (raw == null) return '';

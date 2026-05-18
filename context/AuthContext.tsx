@@ -7,7 +7,8 @@ import React, {
     useState,
 } from "react";
 
-import { supabase } from "@/lib/supabaseClient";
+import { appConfig } from "@/lib/appConfig";
+import { getSupabase } from "@/lib/supabaseClient";
 import {
     getUserById,
     loginUser,
@@ -18,8 +19,7 @@ import {
 } from "@/services/authService";
 
 const SESSION_KEY = "user_session";
-const DEV_AUTH_ENABLED =
-  String(process.env.EXPO_PUBLIC_DEV_AUTH).toLowerCase() === "true";
+const DEV_AUTH_ENABLED = appConfig.devAuth;
 
 export type AuthUser = {
   id: string;
@@ -197,7 +197,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
-    await supabase.auth.signOut();
+    try {
+      const client = getSupabase();
+      if (client) {
+        await client.auth.signOut();
+      }
+    } catch (e) {
+      console.warn("[AuthContext] signOut failed (continuing local logout)", e);
+    }
     const allKeys = await AsyncStorage.getAllKeys();
     const sessionKeys = allKeys.filter(
       (key) => key === SESSION_KEY || key.toLowerCase().includes("supabase"),

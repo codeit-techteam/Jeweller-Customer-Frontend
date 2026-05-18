@@ -12,7 +12,10 @@ import "react-native-reanimated";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
 
+import { AppConfigGate } from "@/components/AppConfigGate";
+import { StartupErrorBoundary } from "@/components/StartupErrorBoundary";
 import { FullScreenLoader } from "@/components/loaders";
+import { logStartupConfig } from "@/lib/appConfig";
 import { UserLocationBootstrap } from "@/components/UserLocationBootstrap";
 import { AuthProvider } from "@/context/AuthContext";
 import { useColorScheme } from "@/hooks/use-color-scheme";
@@ -51,6 +54,11 @@ function AppToast() {
 export default function RootLayout() {
   useColorScheme();
   const [phase, setPhase] = useState<"checking" | "splash" | "app">("checking");
+  const [bootKey, setBootKey] = useState(0);
+
+  useEffect(() => {
+    logStartupConfig();
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -98,52 +106,56 @@ export default function RootLayout() {
   }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <BottomSheetModalProvider>
-          <QueryProvider>
-            <AuthProvider>
-              <UserLocationBootstrap />
-              <Stack>
-                <Stack.Screen
-                  name="(app)"
-                  options={{ headerShown: false, animation: "fade" }}
-                />
-                <Stack.Screen
-                  name="(auth)"
-                  options={{ headerShown: false, animation: "fade" }}
-                />
-                <Stack.Screen
-                  name="location-permission"
-                  options={{ headerShown: false }}
-                />
-                <Stack.Screen
-                  name="location-manual"
-                  options={{ headerShown: false }}
-                />
-                <Stack.Screen
-                  name="menu"
-                  options={{
-                    headerShown: false,
-                    presentation: "transparentModal",
-                    animation: "fade",
-                    animationDuration: 200,
-                  }}
-                />
-                <Stack.Screen
-                  name="modal"
-                  options={{ presentation: "modal", title: "Modal" }}
-                />
-              </Stack>
-              <StatusBar style="auto" />
-              <AppToast />
-              <WishlistToast />
-              <CartToast />
-              <GlobalPopup />
-            </AuthProvider>
-          </QueryProvider>
-        </BottomSheetModalProvider>
-      </SafeAreaProvider>
-    </GestureHandlerRootView>
+    <StartupErrorBoundary onRetry={() => setBootKey((k) => k + 1)}>
+      <GestureHandlerRootView style={{ flex: 1 }} key={bootKey}>
+        <SafeAreaProvider>
+          <AppConfigGate>
+            <BottomSheetModalProvider>
+              <QueryProvider>
+                <AuthProvider>
+                  <UserLocationBootstrap />
+                  <Stack>
+                    <Stack.Screen
+                      name="(app)"
+                      options={{ headerShown: false, animation: "fade" }}
+                    />
+                    <Stack.Screen
+                      name="(auth)"
+                      options={{ headerShown: false, animation: "fade" }}
+                    />
+                    <Stack.Screen
+                      name="location-permission"
+                      options={{ headerShown: false }}
+                    />
+                    <Stack.Screen
+                      name="location-manual"
+                      options={{ headerShown: false }}
+                    />
+                    <Stack.Screen
+                      name="menu"
+                      options={{
+                        headerShown: false,
+                        presentation: "transparentModal",
+                        animation: "fade",
+                        animationDuration: 200,
+                      }}
+                    />
+                    <Stack.Screen
+                      name="modal"
+                      options={{ presentation: "modal", title: "Modal" }}
+                    />
+                  </Stack>
+                  <StatusBar style="auto" />
+                  <AppToast />
+                  <WishlistToast />
+                  <CartToast />
+                  <GlobalPopup />
+                </AuthProvider>
+              </QueryProvider>
+            </BottomSheetModalProvider>
+          </AppConfigGate>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    </StartupErrorBoundary>
   );
 }

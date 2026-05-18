@@ -1,8 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { supabase } from '@/lib/supabaseClient';
+import { appConfig } from '@/lib/appConfig';
+import { getSupabase } from '@/lib/supabaseClient';
 
-const DEV_AUTH_ENABLED = String(process.env.EXPO_PUBLIC_DEV_AUTH).toLowerCase() === 'true';
+const DEV_AUTH_ENABLED = appConfig.devAuth;
 
 export const DEV_TEST_PHONE_E164 = '+918240890242';
 export const DEV_TEST_PHONE_DIGITS = '8240890242';
@@ -105,6 +106,10 @@ export async function upsertTestProfile() {
     avatar_url: null,
   };
 
+  const supabase = getSupabase();
+  if (!supabase) {
+    throw new Error('Supabase is not configured');
+  }
   const { error } = await supabase.from('users_profile').upsert(payload, { onConflict: 'id' });
   if (error) throw error;
 }
