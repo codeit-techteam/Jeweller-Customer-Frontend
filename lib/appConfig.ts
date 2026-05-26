@@ -38,19 +38,73 @@ export function normalizeExpoPublicApiUrl(raw: string | undefined): string {
   return s;
 }
 
+function isLocalhostHost(host: string): boolean {
+  const h = host.toLowerCase();
+  return h === 'localhost' || h === '127.0.0.1' || h === '0.0.0.0' || h.endsWith('.local');
+}
+
 function isLocalhostUrl(url: string): boolean {
   try {
-    const host = new URL(url).hostname.toLowerCase();
-    return host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host.endsWith('.local');
+    return isLocalhostHost(new URL(url).hostname);
   } catch {
     return false;
   }
 }
 
+/** Metro / Expo dev server host — same machine the phone must use for the API. */
+function getMetroBundlerHostname(): string | undefined {
+  const hostUri = Constants.expoConfig?.hostUri;
+  if (typeof hostUri === 'string' && hostUri.trim()) {
+    const host = hostUri.split(':')[0]?.trim();
+    if (host && !isLocalhostHost(host)) return host;
+  }
+
+  const expoGo = Constants.expoGoConfig as { debuggerHost?: string } | null | undefined;
+  const debuggerHost = expoGo?.debuggerHost;
+  if (typeof debuggerHost === 'string' && debuggerHost.trim()) {
+    const host = debuggerHost.split(':')[0]?.trim();
+    if (host && !isLocalhostHost(host)) return host;
+  }
+
+  const legacyDebuggerHost = (
+    Constants as { manifest?: { debuggerHost?: string } }
+  ).manifest?.debuggerHost;
+  if (typeof legacyDebuggerHost === 'string' && legacyDebuggerHost.trim()) {
+    const host = legacyDebuggerHost.split(':')[0]?.trim();
+    if (host && !isLocalhostHost(host)) return host;
+  }
+
+  return undefined;
+}
+
+function resolveApiUrl(configuredRaw: string | undefined): string {
+  const configured = normalizeExpoPublicApiUrl(configuredRaw);
+
+  if (__DEV__) {
+    const metroHost = getMetroBundlerHostname();
+    if (metroHost) {
+      let port = '5105';
+      if (configured) {
+        try {
+          const parsed = new URL(
+            configured.startsWith('http') ? configured : `http://${configured}`,
+          );
+          if (parsed.port) port = parsed.port;
+        } catch {
+          /* keep default port */
+        }
+      }
+      return normalizeExpoPublicApiUrl(`http://${metroHost}:${port}`);
+    }
+  }
+
+  return configured;
+}
+
 export const appConfig = {
   supabaseUrl: readEnv('EXPO_PUBLIC_SUPABASE_URL') ?? '',
   supabaseAnonKey: readEnv('EXPO_PUBLIC_SUPABASE_ANON_KEY') ?? '',
-  apiUrl: normalizeExpoPublicApiUrl(readEnv('EXPO_PUBLIC_API_URL')),
+  apiUrl: resolveApiUrl(readEnv('EXPO_PUBLIC_API_URL')),
   devAuth: String(readEnv('EXPO_PUBLIC_DEV_AUTH') ?? 'false').toLowerCase() === 'true',
 };
 
@@ -94,9 +148,11 @@ export function getAppConfigIssues(): AppConfigIssue[] {
 
 export function logStartupConfig(): void {
   const issues = getAppConfigIssues();
+  const metroHost = __DEV__ ? getMetroBundlerHostname() : undefined;
   console.log('[startup] config', {
     supabase: isSupabaseConfigured(),
     api: isApiConfigured() ? appConfig.apiUrl : '(missing)',
+    apiFromMetro: __DEV__ && Boolean(metroHost),
     devAuth: appConfig.devAuth,
     issueCount: issues.length,
   });
