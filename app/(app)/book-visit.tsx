@@ -4,6 +4,7 @@ import { addDays, format, isToday, parseISO } from 'date-fns';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  Alert,
   Linking,
   Pressable,
   ScrollView,
@@ -29,13 +30,25 @@ import {
   formatBoutiqueDistanceLine,
 } from '@/lib/utils/formatBoutiqueDistance';
 import { productPrimaryUri } from '@/lib/services/mock/imageUrls';
-import { getBoutiqueById, getProductById } from '@/services/api';
+import { createAppointment, getBoutiqueById, getProductById } from '@/services/api';
 import { calculateDistanceKm, parseCoord } from '@/utils/calculateDistance';
 import { fontSizes, radius, spacing } from '@/src/constants/theme';
 
 const NAVY = '#0f172a';
 const GOLD = '#b08d57';
 const WHATSAPP = '#25D366';
+
+/** Converts a display time like "1:00 PM" → "13:00" (HH:MM 24-hr). */
+function toHHMM(displayTime: string): string {
+  const parts = displayTime.trim().split(' ');
+  const [hStr, mStr] = (parts[0] ?? '').split(':');
+  let h = parseInt(hStr ?? '0', 10);
+  const m = parseInt(mStr ?? '0', 10);
+  const meridiem = parts[1]?.toUpperCase();
+  if (meridiem === 'PM' && h !== 12) h += 12;
+  if (meridiem === 'AM' && h === 12) h = 0;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
 
 const TIME_SLOTS = ['10:00 AM', '11:30 AM', '1:00 PM', '3:30 PM', '5:00 PM'];
 
@@ -117,6 +130,7 @@ export default function BookVisitScreen() {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [notes, setNotes] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const {
     coords: userCoords,
@@ -297,20 +311,40 @@ export default function BookVisitScreen() {
     Linking.openURL(`tel:${raw.replace(/\s/g, '')}`).catch(() => {});
   };
 
-  const onConfirm = () => {
+  const onConfirm = async () => {
     if (!canConfirm || !selectedDateKey || !selectedTime || !profile) return;
-    const d = parseISO(selectedDateKey);
-    const dateFormatted = format(d, 'do MMM');
-    router.push({
-      pathname: '/(app)/appointment-booked',
-      params: {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      const result = await createAppointment({
+        userId: null,
         boutiqueId: profile.id,
-        boutiqueName: profile.name,
-        date: dateFormatted,
-        time: selectedTime,
-        address: profile.address ?? profile.location ?? 'Location unavailable',
-      },
-    });
+        date: selectedDateKey,
+        time: toHHMM(selectedTime),
+        type: visitType === 'instore' ? 'in-store' : 'call',
+        notes: notes.trim() || null,
+        customerName: name.trim() || null,
+        customerPhone: phone.trim() || null,
+        serviceRequested: product?.name ?? null,
+      });
+      const d = parseISO(selectedDateKey);
+      const dateFormatted = format(d, 'do MMM');
+      router.push({
+        pathname: '/(app)/appointment-booked',
+        params: {
+          boutiqueId: profile.id,
+          boutiqueName: profile.name,
+          date: dateFormatted,
+          time: selectedTime,
+          address: profile.address ?? profile.location ?? 'Location unavailable',
+          appointmentId: result.id,
+        },
+      });
+    } catch {
+      Alert.alert('Booking Failed', 'Could not confirm your appointment. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const distanceKm = useMemo(() => {
@@ -597,9 +631,9 @@ export default function BookVisitScreen() {
         </View>
 
         <Pressable
-          style={[styles.confirmBtn, !canConfirm && styles.confirmBtnDisabled]}
+          style={[styles.confirmBtn, (!canConfirm || submitting) && styles.confirmBtnDisabled]}
           onPress={onConfirm}
-          disabled={!canConfirm}
+          disabled={!canConfirm || submitting}
         >
           <Text style={styles.confirmText}>CONFIRM APPOINTMENT</Text>
           <MaterialIcons name="arrow-forward" size={20} color="#fff" />

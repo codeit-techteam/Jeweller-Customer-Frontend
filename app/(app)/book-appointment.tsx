@@ -2,14 +2,14 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { addDays, format, isToday, parseISO } from 'date-fns';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getBoutiqueHoursStatus, normalizeWorkingDays } from '@/lib/boutiques/boutiqueUi';
 import { BoutiqueStatusBadge } from '@/lib/components/common/BoutiqueStatusBadge';
 import { RemoteImage } from '@/lib/components/common/RemoteImage';
 import { getBoutiqueProfileForId } from '@/lib/services/mock/boutiques';
-import { getBoutiqueById } from '@/services/api';
+import { createAppointment, getBoutiqueById } from '@/services/api';
 import { boutiqueListingCoverImage } from '@/lib/services/mock/imageUrls';
 import { fontSizes, radius, spacing } from '@/src/constants/theme';
 import { BoutiqueSkeletonLoader, ButtonLoader } from '@/components/loaders';
@@ -19,6 +19,18 @@ const NAVY = '#0f172a';
 const GOLD = '#b8860b';
 const MUTED = '#64748b';
 const UUID_V4_LIKE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** Converts a display time like "02:30 PM" → "14:30" (HH:MM 24-hr). */
+function toHHMM(displayTime: string): string {
+  const parts = displayTime.trim().split(' ');
+  const [hStr, mStr] = (parts[0] ?? '').split(':');
+  let h = parseInt(hStr ?? '0', 10);
+  const m = parseInt(mStr ?? '0', 10);
+  const meridiem = parts[1]?.toUpperCase();
+  if (meridiem === 'PM' && h !== 12) h += 12;
+  if (meridiem === 'AM' && h === 12) h = 0;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
 
 const TIME_SLOTS = ['10:00 AM', '11:30 AM', '01:00 PM', '02:30 PM', '04:00 PM', '05:30 PM'];
 
@@ -145,24 +157,41 @@ export default function BookAppointmentScreen() {
     name.trim().length > 0 &&
     phone.replace(/\s/g, '').length >= 8;
 
-  const onConfirm = useCallback(() => {
+  const onConfirm = useCallback(async () => {
     if (!canConfirm || !selectedDateKey || !selectedTime || !profile) return;
     if (submitting) return;
     setSubmitting(true);
-    const d = parseISO(selectedDateKey);
-    const dateFormatted = format(d, 'do MMM');
-    router.push({
-      pathname: '/(app)/appointment-booked',
-      params: {
+    try {
+      const result = await createAppointment({
+        userId: null,
         boutiqueId: profile.id,
-        boutiqueName: profile.name,
-        date: dateFormatted,
-        time: selectedTime,
-        address: profile.contactAddress,
-      },
-    });
-    setTimeout(() => setSubmitting(false), 200);
-  }, [canConfirm, selectedDateKey, selectedTime, profile, router, submitting]);
+        date: selectedDateKey,
+        time: toHHMM(selectedTime),
+        type: appointmentType === 'instore' ? 'in-store' : 'call',
+        notes: notes.trim() || null,
+        customerName: name.trim() || null,
+        customerPhone: phone.trim() || null,
+        serviceRequested: null,
+      });
+      const d = parseISO(selectedDateKey);
+      const dateFormatted = format(d, 'do MMM');
+      router.push({
+        pathname: '/(app)/appointment-booked',
+        params: {
+          boutiqueId: profile.id,
+          boutiqueName: profile.name,
+          date: dateFormatted,
+          time: selectedTime,
+          address: profile.contactAddress,
+          appointmentId: result.id,
+        },
+      });
+    } catch {
+      Alert.alert('Booking Failed', 'Could not confirm your appointment. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  }, [canConfirm, selectedDateKey, selectedTime, profile, appointmentType, notes, name, phone, router, submitting]);
 
   const editPhone = useCallback(() => {
     phoneRef.current?.focus();

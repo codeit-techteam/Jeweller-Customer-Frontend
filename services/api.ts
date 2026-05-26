@@ -671,6 +671,25 @@ export function updateAppointmentStatus(
   );
 }
 
+export type CreateAppointmentBody = {
+  userId: string | null;
+  boutiqueId: string;
+  date: string;
+  time: string;
+  type?: "in-store" | "call";
+  notes?: string | null;
+  customerName?: string | null;
+  customerPhone?: string | null;
+  serviceRequested?: string | null;
+};
+
+export function createAppointment(body: CreateAppointmentBody) {
+  return request<{ id: string; boutique_id: string; date: string; time: string; type: string; status: string; starts_at: string | null }>(
+    "/api/appointments",
+    { method: "POST", data: body },
+  );
+}
+
 export function getSavedBoutiques(userId: string) {
   return request<
     Array<{
