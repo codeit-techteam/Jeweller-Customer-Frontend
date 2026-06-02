@@ -40,7 +40,7 @@ import {
 } from "@/lib/services/mock/collections/collectionScreenConfig";
 import { snapshotFromListingFields } from "@/lib/services/mock/wishlist";
 import type { CatalogProduct } from "@/lib/services/productCatalog";
-import { useWishlistStore } from "@/lib/stores/wishlistStore";
+import { useWishlistIds, useWishlistStore } from "@/lib/stores/wishlistStore";
 import { fontSizes, spacing } from "@/src/constants/theme";
 
 const { width: SCREEN_W } = Dimensions.get("window");
@@ -205,7 +205,7 @@ export function CollectionScreen({ config, collectionSlug }: Props) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const toggleWishlist = useWishlistStore((s) => s.toggle);
-  const wishIds = useWishlistStore((s) => s.ids);
+  const wishIds = useWishlistIds();
 
   const {
     products: backendProducts,

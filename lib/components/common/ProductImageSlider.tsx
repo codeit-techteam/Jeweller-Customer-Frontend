@@ -237,18 +237,14 @@ export function ProductImageSlider({
       ]),
     ]).start();
 
-    if (wishlistSnapshot) {
-      void toggleWish(productId, wishlistSnapshot);
-      return;
-    }
-    const img0 = safeImages[0];
-    void toggleWish(productId, {
+    const snapshot = wishlistSnapshot ?? {
       id: productId,
       name: productName,
       price: 0,
-      image: img0?.uri ?? PLACEHOLDER_IMAGE_URI,
-      tintFallback: img0?.tint,
-    });
+      image: safeImages[0]?.uri ?? PLACEHOLDER_IMAGE_URI,
+      tintFallback: safeImages[0]?.tint,
+    };
+    void toggleWish(productId, snapshot);
   }, [
     heartOpacity,
     heartScale,

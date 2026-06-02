@@ -10,10 +10,12 @@ import { BoutiqueStatusBadge } from '@/lib/components/common/BoutiqueStatusBadge
 import { RemoteImage } from '@/lib/components/common/RemoteImage';
 import { getBoutiqueProfileForId } from '@/lib/services/mock/boutiques';
 import { createAppointment, getBoutiqueById } from '@/services/api';
+import { createAppointmentBookedNotifications } from '@/lib/services/notifications';
 import { boutiqueListingCoverImage } from '@/lib/services/mock/imageUrls';
 import { fontSizes, radius, spacing } from '@/src/constants/theme';
 import { BoutiqueSkeletonLoader, ButtonLoader } from '@/components/loaders';
 import { EmptyState } from '@/lib/components/common/EmptyState';
+import { useAuth } from '@/context/AuthContext';
 
 const NAVY = '#0f172a';
 const GOLD = '#b8860b';
@@ -41,6 +43,7 @@ function paramStr(raw: string | string[] | undefined): string | undefined {
 
 export default function BookAppointmentScreen() {
   const router = useRouter();
+  const { user } = useAuth();
   const boutiqueId = paramStr(useLocalSearchParams<{ boutiqueId?: string | string[] }>().boutiqueId);
   const [profile, setProfile] = useState<{
     id: string;
@@ -163,7 +166,7 @@ export default function BookAppointmentScreen() {
     setSubmitting(true);
     try {
       const result = await createAppointment({
-        userId: null,
+        userId: user?.id ?? null,
         boutiqueId: profile.id,
         date: selectedDateKey,
         time: toHHMM(selectedTime),
@@ -173,6 +176,16 @@ export default function BookAppointmentScreen() {
         customerPhone: phone.trim() || null,
         serviceRequested: null,
       });
+      if (user?.id) {
+        await createAppointmentBookedNotifications({
+          userId: user.id,
+          appointmentId: result.id,
+          boutiqueId: profile.id,
+          boutiqueName: profile.name,
+          date: selectedDateKey,
+          time: selectedTime,
+        });
+      }
       const d = parseISO(selectedDateKey);
       const dateFormatted = format(d, 'do MMM');
       router.push({

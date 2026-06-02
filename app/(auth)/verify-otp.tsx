@@ -59,7 +59,7 @@ export default function VerifyOtpScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<VerifyParams>();
-  const { verifyOtp, isLoggedIn } = useAuth();
+  const { verifyOtp } = useAuth();
   const phoneDigits = useMemo(
     () => paramStr(params.phone).replace(/\D/g, '').slice(0, 10),
     [params.phone],
@@ -97,14 +97,10 @@ export default function VerifyOtpScreen() {
   );
 
   useEffect(() => {
-    if (isLoggedIn) {
-      router.replace('/(app)/home');
-      return;
-    }
     if (phoneDigits.length !== 10) {
       router.replace('/(auth)/login');
     }
-  }, [phoneDigits, router, isLoggedIn]);
+  }, [phoneDigits, router]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -259,7 +255,8 @@ export default function VerifyOtpScreen() {
         return;
       }
 
-      router.replace('/(app)/home');
+      // Navigation is handled by PostLoginSyncHandler after session persist.
+      setSubmitting(false);
     } catch (e: any) {
       const rawMessage = typeof e?.message === 'string' ? e.message : '';
       let friendly = 'Could not verify the code. Please try again.';

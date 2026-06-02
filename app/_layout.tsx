@@ -20,6 +20,9 @@ import { UserLocationBootstrap } from "@/components/UserLocationBootstrap";
 import { AuthProvider } from "@/context/AuthContext";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { GlobalPopup } from "@/lib/components/common/GlobalPopup";
+import { GuestBanner } from "@/lib/components/common/GuestBanner";
+import { LoginRequiredSheet } from "@/lib/components/common/LoginRequiredSheet";
+import { PostLoginSyncHandler } from "@/lib/components/common/PostLoginSyncHandler";
 import { toastConfig } from "@/lib/components/common/Toast";
 import { CartToast } from "@/lib/components/common/CartToast";
 import { WishlistToast } from "@/lib/components/common/WishlistToast";
@@ -113,6 +116,7 @@ export default function RootLayout() {
             <BottomSheetModalProvider>
               <QueryProvider>
                 <AuthProvider>
+                  <PostLoginSyncHandler />
                   <UserLocationBootstrap />
                   <Stack>
                     <Stack.Screen
@@ -146,6 +150,8 @@ export default function RootLayout() {
                     />
                   </Stack>
                   <StatusBar style="auto" />
+                  <GuestBanner />
+                  <LoginRequiredSheet />
                   <AppToast />
                   <WishlistToast />
                   <CartToast />

@@ -15,7 +15,7 @@ import { pushProductDetails } from "@/lib/navigation/productNavigation";
 import { fetchTrendingProductsUi } from "@/lib/services/catalogApi";
 import { snapshotFromListingFields } from "@/lib/services/mock/wishlist";
 import { useCartStore } from "@/lib/stores/cartStore";
-import { useWishlistStore } from "@/lib/stores/wishlistStore";
+import { useWishlistIds, useWishlistStore } from "@/lib/stores/wishlistStore";
 import { PLACEHOLDER_IMAGE_URI } from "@/lib/services/mock/imageUrls";
 import { BottomTabBar } from "@/src/components/navigation/BottomTabBar";
 import { fontSizes, radius, spacing } from "@/src/constants/theme";
@@ -41,7 +41,7 @@ function toListingItem(item: TrendingProduct): ListingProductCardItem {
 
 export default function TrendingScreen() {
   const router = useRouter();
-  const wishIds = useWishlistStore((s) => s.ids);
+  const wishIds = useWishlistIds();
   const toggleWishlist = useWishlistStore((s) => s.toggle);
   const cartCount = useCartStore((s) =>
     s.items.reduce((acc, line) => acc + line.qty, 0),

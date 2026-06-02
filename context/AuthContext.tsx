@@ -34,6 +34,10 @@ type AuthContextValue = {
   user: AuthUser | null;
   loading: boolean;
   isLoggedIn: boolean;
+  /** True when browsing without an authenticated session */
+  isGuest: boolean;
+  /** True when user has a valid persisted session */
+  isAuthenticated: boolean;
   login: (phone: string) => Promise<"ok" | "not-found">;
   signup: (
     fullName: string,
@@ -260,6 +264,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user,
       loading,
       isLoggedIn: !!user,
+      isGuest: !user,
+      isAuthenticated: !!user,
       login,
       signup,
       verifyOtp,

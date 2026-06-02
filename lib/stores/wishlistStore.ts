@@ -3,7 +3,13 @@ import { create } from "zustand";
 import Toast from "react-native-toast-message";
 
 import { showWishlistToast } from "@/lib/stores/wishlistToastStore";
+import { useAuthGuardStore } from "@/lib/stores/authGuardStore";
+import { useGuestSessionStore } from "@/lib/stores/guestSessionStore";
 import type { WishlistSnapshot } from "@/lib/services/mock/wishlist";
+import {
+  trackGuestWishlistAttempt,
+  trackLoginModalOpened,
+} from "@/services/analyticsTracking";
 import {
   addWishlistProduct,
   ApiError,
@@ -27,8 +33,10 @@ type WishlistState = {
   pendingById: Record<string, boolean>;
   initializeForUser: (userId: string | null) => Promise<void>;
   refresh: () => Promise<void>;
-  toggle: (id: string, snapshot?: WishlistSnapshot) => Promise<void>;
+  toggle: (id: string, snapshot?: WishlistSnapshot, options?: { skipToast?: boolean }) => Promise<void>;
   remove: (id: string) => Promise<void>;
+  /** Remove from wishlist only (no toggle / guest login flow). Used after move-to-cart. */
+  removeFromWishlistOnly: (id: string) => Promise<void>;
   isWishlisted: (id: string) => boolean;
 };
 
@@ -119,11 +127,25 @@ export const useWishlistStore = create<WishlistState>()((set, get) => ({
     await get().initializeForUser(userId);
   },
 
-  toggle: async (id, snapshot) => {
+  toggle: async (id, snapshot, options) => {
     const state = get();
     const userId = state.userId;
     if (!userId) {
-      Toast.show({ type: "error", text1: "Login required" });
+      const guestStore = useGuestSessionStore.getState();
+      if (guestStore.isGuestWishlisted(id)) {
+        await guestStore.removeGuestWishlist(id);
+        return;
+      }
+      if (snapshot) {
+        await guestStore.addGuestWishlist(snapshot);
+      }
+      useAuthGuardStore.getState().openLoginModal({
+        type: "wishlist",
+        productId: id,
+        snapshot,
+      });
+      trackLoginModalOpened("wishlist");
+      trackGuestWishlistAttempt(id);
       return;
     }
     if (state.pendingById[id]) return;
@@ -168,17 +190,21 @@ export const useWishlistStore = create<WishlistState>()((set, get) => ({
     try {
       if (wasWishlisted) {
         await removeWishlistProduct(id, userId);
-        showWishlistToast({ type: "removed" });
+        if (!options?.skipToast) {
+          showWishlistToast({ type: "removed" });
+        }
       } else {
         await addWishlistProduct(id, userId);
         console.log("WISHLIST SAVE SUCCESS:", { userId, productId: id });
-        showWishlistToast({
-          type: "added",
-          actionText: "VIEW",
-          onAction: () => {
-            router.push("/(app)/wishlist");
-          },
-        });
+        if (!options?.skipToast) {
+          showWishlistToast({
+            type: "added",
+            actionText: "VIEW",
+            onAction: () => {
+              router.push("/(app)/wishlist");
+            },
+          });
+        }
       }
     } catch (error) {
       if (error instanceof ApiError && error.status === 409 && !wasWishlisted) {
@@ -207,9 +233,57 @@ export const useWishlistStore = create<WishlistState>()((set, get) => ({
     await get().toggle(id);
   },
 
+  removeFromWishlistOnly: async (id) => {
+    const state = get();
+    const userId = state.userId;
+    if (!userId || !state.ids.includes(id)) return;
+    if (state.pendingById[id]) return;
+
+    const previousIds = state.ids;
+    const previousItems = state.items;
+    const previousCount = state.count;
+
+    set((s) => {
+      const { [id]: _removed, ...rest } = s.items;
+      return {
+        ids: s.ids.filter((x) => x !== id),
+        items: rest,
+        count: Math.max(0, s.count - 1),
+        pendingById: { ...s.pendingById, [id]: true },
+      };
+    });
+
+    try {
+      await removeWishlistProduct(id, userId);
+    } catch (error) {
+      set({
+        ids: previousIds,
+        items: previousItems,
+        count: previousCount,
+        pendingById: { ...state.pendingById, [id]: false },
+      });
+      throw error;
+    }
+
+    set((s) => ({
+      pendingById: { ...s.pendingById, [id]: false },
+    }));
+  },
+
   isWishlisted: (id) => get().ids.includes(id),
 }));
 
+/** Server wishlist ids when logged in; guest cache ids when browsing as guest. */
+export function useWishlistIds(): string[] {
+  const serverIds = useWishlistStore((s) => s.ids);
+  const userId = useWishlistStore((s) => s.userId);
+  const guestIds = useGuestSessionStore((s) => s.wishlistIds);
+  return userId ? serverIds : guestIds;
+}
+
 export function useIsWishlisted(id: string): boolean {
-  return useWishlistStore((s) => s.ids.includes(id));
+  const userId = useWishlistStore((s) => s.userId);
+  const inServer = useWishlistStore((s) => s.ids.includes(id));
+  const inGuest = useGuestSessionStore((s) => s.wishlistIds.includes(id));
+  return userId ? inServer : inGuest;
 }

@@ -1,20 +1,23 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useRouter } from "expo-router";
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import Toast from "react-native-toast-message";
 
 import { WishlistCard } from "@/lib/components/common/WishlistCard";
 import { CartNavIcon } from "@/lib/components/common/CartNavIcon";
 import { pushProductDetails } from "@/lib/navigation/productNavigation";
-import { getProductById } from "@/lib/services/mock/products";
+import {
+  moveWishlistItemToCart,
+  showBottomError,
+} from "@/lib/services/wishlistMoveToCartAction";
 import { useCartStore } from "@/lib/stores/cartStore";
 import { useWishlistStore } from "@/lib/stores/wishlistStore";
 import { fontSizes, spacing } from "@/src/constants/theme";
 
 const NAVY = "#0f172a";
 const MUTED = "#94a3b8";
+const GOLD = "#c29a33";
 
 export default function WishlistScreen() {
   const router = useRouter();
@@ -22,11 +25,10 @@ export default function WishlistScreen() {
   const items = useWishlistStore((s) => s.items);
   const loading = useWishlistStore((s) => s.loading);
   const toggleWishlist = useWishlistStore((s) => s.toggle);
-  const removeWishlist = useWishlistStore((s) => s.remove);
-  const addItem = useCartStore((s) => s.addItem);
   const cartCount = useCartStore((s) =>
     s.items.reduce((acc, line) => acc + line.qty, 0),
   );
+  const [movingId, setMovingId] = useState<string | null>(null);
 
   const rows = useMemo(() => ids.map((id) => items[id]).filter(Boolean), [ids, items]);
 
@@ -45,26 +47,22 @@ export default function WishlistScreen() {
   );
 
   const onMoveToCart = useCallback(
-    (id: string) => {
-      const product = getProductById(id);
-      if (!product) {
-        Toast.show({ type: "error", text1: "Product unavailable" });
-        return;
-      }
+    async (id: string) => {
       const row = items[id];
-      addItem({
-        productId: product.id,
-        name: product.name,
-        price: product.price,
-        size: product.sizeOptions[0] ?? "16",
-        metal: product.metal,
-        qty: 1,
-        subtitle: `${product.metal} / ${product.sizeOptions[0] ?? "16"}`,
-        imageUri: row?.image?.startsWith("http") ? row.image : undefined,
-      });
-      void removeWishlist(id);
+      if (!row || movingId) return;
+
+      setMovingId(id);
+      try {
+        const result = await moveWishlistItemToCart(row);
+        if (result.ok || result.needsLogin) return;
+        showBottomError(result.message);
+      } catch {
+        showBottomError("Unable to connect. Please try again.");
+      } finally {
+        setMovingId(null);
+      }
     },
-    [addItem, items, removeWishlist],
+    [items, movingId],
   );
 
   return (
@@ -102,16 +100,16 @@ export default function WishlistScreen() {
         </View>
       ) : rows.length === 0 ? (
         <View style={styles.emptyWrap}>
-          <MaterialIcons name="favorite-border" size={56} color="#cbd5e1" />
+          <Text style={styles.emptyEmoji}>❤️</Text>
           <Text style={styles.emptyTitle}>Your wishlist is empty</Text>
           <Text style={styles.emptySub}>
-            Save pieces you love — they will show up here.
+            Save jewellery you love and find it here later.
           </Text>
           <Pressable
             style={styles.emptyBtn}
-            onPress={() => router.push("/(app)/trending")}
+            onPress={() => router.push("/(app)/categories")}
           >
-            <Text style={styles.emptyBtnText}>Browse products</Text>
+            <Text style={styles.emptyBtnText}>Explore Collections</Text>
           </Pressable>
         </View>
       ) : (
@@ -125,9 +123,10 @@ export default function WishlistScreen() {
           renderItem={({ item }) => (
             <WishlistCard
               item={item}
+              moving={movingId === item.id}
               onPressCard={() => openProduct(item.id)}
               onPressHeart={() => onHeart(item.id)}
-              onMoveToCart={() => onMoveToCart(item.id)}
+              onMoveToCart={() => void onMoveToCart(item.id)}
             />
           )}
         />
@@ -189,9 +188,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingBottom: 80,
+    backgroundColor: "#f8f9fa",
   },
+  emptyEmoji: { fontSize: 48, marginBottom: spacing.sm },
   emptyTitle: {
-    marginTop: spacing.lg,
+    marginTop: spacing.md,
     fontSize: fontSizes.lg,
     fontWeight: "800",
     color: NAVY,
@@ -201,7 +202,8 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.sm,
     color: MUTED,
     textAlign: "center",
-    lineHeight: 20,
+    lineHeight: 22,
+    maxWidth: 280,
   },
   emptyBtn: {
     marginTop: spacing.xl,
@@ -209,6 +211,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderRadius: 999,
     backgroundColor: NAVY,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: GOLD,
   },
   emptyBtnText: { color: "#fff", fontWeight: "800", fontSize: fontSizes.sm },
 });

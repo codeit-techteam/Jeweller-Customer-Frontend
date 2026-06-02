@@ -24,6 +24,7 @@ import {
 } from "react-native-safe-area-context";
 
 import { useAuth } from "@/context/AuthContext";
+import { useAuthGuard } from "@/src/hooks/useAuthGuard";
 import { useBoutique } from "@/hooks/useBoutique";
 import {
   normalizeFilterKey,
@@ -40,7 +41,6 @@ import { RemoteImage } from "@/lib/components/common/RemoteImage";
 import { pushProductDetails } from "@/lib/navigation/productNavigation";
 import { useRecentlyViewedStore } from "@/lib/stores/recentlyViewedStore";
 import { useSavedBoutiquesStore } from "@/lib/stores/savedBoutiquesStore";
-import { showPopup } from "@/lib/stores/popupStore";
 import { applyLiveHoursToProfile } from "@/services/boutique.service";
 import { addRecentlyViewed } from "@/services/api";
 import { recordBoutiqueVisitAnalytics } from "@/services/analyticsTracking";
@@ -125,7 +125,8 @@ export default function BoutiqueProfileScreen() {
   const trackBoutiqueVisit = useRecentlyViewedStore(
     (s) => s.trackBoutiqueVisit,
   );
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
+  const requireAuth = useAuthGuard();
   const savedIds = useSavedBoutiquesStore((s) => s.ids);
   const hydrateSavedForUser = useSavedBoutiquesStore(
     (s) => s.hydrateForUser,
@@ -248,11 +249,19 @@ export default function BoutiqueProfileScreen() {
     if (!profile?.id) {
       return;
     }
-    router.push({
-      pathname: "/(app)/book-appointment",
-      params: { boutiqueId: profile.id },
-    });
-  }, [profile, router]);
+    requireAuth(
+      () => {
+        router.push({
+          pathname: "/(app)/book-appointment",
+          params: { boutiqueId: profile.id },
+        });
+      },
+      {
+        pendingAction: { type: "appointment", boutiqueId: profile.id },
+        analyticsEvent: "appointment",
+      },
+    );
+  }, [profile, requireAuth, router]);
 
   const openWhatsApp = useCallback(() => {
     if (!profile) return;
@@ -279,28 +288,22 @@ export default function BoutiqueProfileScreen() {
   const handleSaveToggle = useCallback(() => {
     if (!profile?.id) return;
     if (!UUID_V4_LIKE.test(profile.id)) {
-      showPopup({
-        type: "info",
-        title: "Not available yet",
-        message:
-          "This boutique isn't available to save yet. Please try saving a boutique from the live catalogue.",
-      });
       return;
     }
-    if (!user?.id) {
+    if (!isAuthenticated) {
       if (Platform.OS !== "web") {
         void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       }
-      showPopup({
-        type: "confirm",
-        title: "Please sign in",
-        message: "Please sign in to save boutiques and keep them in sync across your visits.",
-        confirmLabel: "Login",
-        cancelLabel: "Not now",
-        onConfirm: () => {
-          router.push("/(auth)/login");
+      requireAuth(
+        () => {
+          if (!user?.id) return;
+          void saveForUser(user.id, profile.id);
+          setSaved(true);
         },
-      });
+        {
+          pendingAction: { type: "boutique_save", boutiqueId: profile.id },
+        },
+      );
       return;
     }
     if (Platform.OS !== "web") {
@@ -309,11 +312,11 @@ export default function BoutiqueProfileScreen() {
     const next = !saved;
     setSaved(next);
     if (next) {
-      void saveForUser(user.id, profile.id);
+      void saveForUser(user!.id, profile.id);
     } else {
-      void unsaveForUser(user.id, profile.id);
+      void unsaveForUser(user!.id, profile.id);
     }
-  }, [profile?.id, router, saved, saveForUser, unsaveForUser, user?.id]);
+  }, [profile?.id, saved, saveForUser, unsaveForUser, user, isAuthenticated, requireAuth]);
 
   const listLoading = Boolean(id) && boutiqueQuery.isPending && !boutiqueQuery.data;
   const notFoundMessage =

@@ -37,7 +37,7 @@ import {
 import { snapshotFromListingFields } from "@/lib/services/mock/wishlist";
 import { getRelationshipSectionListing } from "@/services/api";
 import { useProductListingFiltersStore } from "@/lib/stores/productListingFiltersStore";
-import { useWishlistStore } from "@/lib/stores/wishlistStore";
+import { useWishlistIds, useWishlistStore } from "@/lib/stores/wishlistStore";
 import { fontSizes, radius, spacing } from "@/src/constants/theme";
 
 const UUID_V4_LIKE =
@@ -107,7 +107,7 @@ function mapRelationshipListingRow(
 export default function CategoryProductsScreen() {
   const router = useRouter();
   const navigation = useNavigation();
-  const wishIds = useWishlistStore((s) => s.ids);
+  const wishIds = useWishlistIds();
   const toggleWishlist = useWishlistStore((s) => s.toggle);
   const params = useLocalSearchParams<{
     category?: string;

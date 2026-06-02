@@ -1,3 +1,11 @@
 import WishlistScreen from '@/screens/WishlistScreen';
 
-export default WishlistScreen;
+import { ProtectedRouteGate } from '@/lib/components/common/ProtectedRouteGate';
+
+export default function WishlistRoute() {
+  return (
+    <ProtectedRouteGate routePath="/(app)/wishlist">
+      <WishlistScreen />
+    </ProtectedRouteGate>
+  );
+}

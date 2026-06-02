@@ -3,18 +3,23 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { RemoteImage } from '@/lib/components/common/RemoteImage';
-import type { NotificationModel } from '@/lib/services/mock/notifications';
+import type { AppNotification } from '@/lib/services/notifications';
 import { fontSizes, radius, spacing } from '@/src/constants/theme';
 
-const ICON_MAP: Record<NotificationModel['iconType'], keyof typeof MaterialIcons.glyphMap> = {
-  package: 'local-shipping',
-  calendar: 'event',
-  sparkles: 'auto-awesome',
-  price: 'sell',
+const ICON_MAP: Record<AppNotification['type'], keyof typeof MaterialIcons.glyphMap> = {
+  lead: 'person',
+  order: 'local-shipping',
+  system: 'campaign',
+  document: 'description',
+  payment: 'payments',
+  approval: 'verified',
+  appointment: 'event',
+  offer: 'sell',
+  collection: 'auto-awesome',
 };
 
 type Props = {
-  item: NotificationModel;
+  item: AppNotification & { imageUri?: string; timeLabel: string; actionLabel?: string };
   onPress: () => void;
   onActionPress?: () => void;
 };
@@ -38,21 +43,21 @@ export function NotificationItem({ item, onPress, onActionPress }: Props) {
               <Text style={[styles.title, unread && styles.titleUnread]} numberOfLines={2}>
                 {item.title}
               </Text>
-              <Text style={styles.time}>{item.time}</Text>
+              <Text style={styles.time}>{item.timeLabel}</Text>
             </View>
-            <Text style={[styles.message, unread && styles.messageUnread]}>{item.message}</Text>
+            <Text style={[styles.message, unread && styles.messageUnread]}>{item.body}</Text>
             {item.imageUri ? <RemoteImage uri={item.imageUri} style={styles.imageBlock} /> : null}
           </View>
           {unread ? <View style={styles.unreadDot} /> : <View style={styles.dotPlaceholder} />}
         </View>
       </Pressable>
-      {item.action ? (
+      {item.actionLabel ? (
         <Pressable
           accessibilityRole="button"
           onPress={onActionPress}
           style={({ pressed: p }) => [styles.actionBtn, p && styles.actionPressed]}
         >
-          <Text style={styles.actionText}>{item.action.label}</Text>
+          <Text style={styles.actionText}>{item.actionLabel}</Text>
         </Pressable>
       ) : null}
     </View>

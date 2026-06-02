@@ -26,6 +26,7 @@ import {
 import { ShimmerBlock } from "@/components/loaders/ShimmerBlock";
 import { useNetworkReachable } from "@/hooks/useNetworkReachable";
 import { useUserLocation } from "@/hooks/useUserLocation";
+import { useAuthGuard } from "@/src/hooks/useAuthGuard";
 import {
     boutiqueHasCoordinates,
     formatBoutiqueDistanceLine,
@@ -58,7 +59,8 @@ import {
 } from "@/lib/services/mock/imageUrls";
 import { snapshotFromListingFields } from "@/lib/services/mock/wishlist";
 import { useCartStore } from "@/lib/stores/cartStore";
-import { useWishlistStore } from "@/lib/stores/wishlistStore";
+import { useNotificationsStore } from "@/lib/stores/notificationsStore";
+import { useWishlistIds, useWishlistStore } from "@/lib/stores/wishlistStore";
 import { ApiError } from "@/services/api";
 import { applyUserLocationToBoutiqueList } from "@/services/boutique.service";
 import { BottomTabBar } from "@/src/components/navigation/BottomTabBar";
@@ -113,6 +115,7 @@ function SectionTitle({
 }
 
 function HomeContent() {
+  const requireAuth = useAuthGuard();
   const [homeCategoryPreview, setHomeCategoryPreview] = useState<string[]>([]);
   const [homeCategoryImageByName, setHomeCategoryImageByName] = useState<
     Record<string, string>
@@ -151,12 +154,13 @@ function HomeContent() {
     [rawBoutiques, userCoords],
   );
   const router = useRouter();
-  const wishIds = useWishlistStore((s) => s.ids);
+  const wishIds = useWishlistIds();
   const wishlistCount = useWishlistStore((s) => s.count);
   const toggleWishlist = useWishlistStore((s) => s.toggle);
   const cartCount = useCartStore((s) =>
     s.items.reduce((acc, line) => acc + line.qty, 0),
   );
+  const unreadNotificationsCount = useNotificationsStore((s) => s.unreadCount);
   const openWishlist = useCallback(
     () => router.push("/(app)/wishlist"),
     [router],
@@ -342,12 +346,20 @@ function HomeContent() {
         console.log("Missing boutique id");
         return;
       }
-      router.push({
-        pathname: "/(app)/book-appointment",
-        params: { boutiqueId: id },
-      });
+      requireAuth(
+        () => {
+          router.push({
+            pathname: "/(app)/book-appointment",
+            params: { boutiqueId: id },
+          });
+        },
+        {
+          pendingAction: { type: "appointment", boutiqueId: id },
+          analyticsEvent: "appointment",
+        },
+      );
     },
-    [router],
+    [requireAuth, router],
   );
 
   const nearestBoutiqueCardShadow = useMemo(
@@ -439,6 +451,15 @@ function HomeContent() {
               size={24}
               color={styles.icon.color}
             />
+            {unreadNotificationsCount > 0 ? (
+              <View style={styles.notificationBadge}>
+                <Text style={styles.notificationBadgeText}>
+                  {unreadNotificationsCount > 99
+                    ? "99+"
+                    : String(unreadNotificationsCount)}
+                </Text>
+              </View>
+            ) : null}
           </Pressable>
           <WishlistNavIcon
             count={wishlistCount}
@@ -829,6 +850,26 @@ const styles = StyleSheet.create({
   iconButtonPressed: {
     opacity: 0.85,
     backgroundColor: "#ededed",
+  },
+  notificationBadge: {
+    position: "absolute",
+    top: -6,
+    right: -6,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: "#dc2626",
+    borderWidth: 1.5,
+    borderColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 3,
+  },
+  notificationBadgeText: {
+    color: "#fff",
+    fontSize: 9,
+    fontWeight: "800",
+    includeFontPadding: false,
   },
   icon: { color: "#0e1d3a" },
   searchBarWrap: { marginTop: spacing.sm, marginBottom: spacing.md },

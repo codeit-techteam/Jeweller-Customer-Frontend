@@ -27,7 +27,7 @@ import {
 } from "@/lib/services/mock/recentlyViewed";
 import { parseCoord } from "@/utils/calculateDistance";
 import { snapshotFromRecentProduct } from "@/lib/services/mock/wishlist";
-import { useWishlistStore } from "@/lib/stores/wishlistStore";
+import { useWishlistIds, useWishlistStore } from "@/lib/stores/wishlistStore";
 import { fontSizes, radius, spacing } from "@/src/constants/theme";
 
 const GOLD = "#b8860b";
@@ -54,7 +54,7 @@ export function RecentlyViewedBoutiqueCard({
   onViewProducts,
   onRemove,
 }: Props) {
-  const wishIds = useWishlistStore((s) => s.ids);
+  const wishIds = useWishlistIds();
   const toggleWishlist = useWishlistStore((s) => s.toggle);
   const locationLoading = useUserLocationStore((s) => s.loading);
   const locationPermission = useUserLocationStore((s) => s.permission);

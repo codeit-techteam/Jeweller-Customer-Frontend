@@ -1,3 +1,11 @@
 import ActivePlansScreen from '@/screens/ActivePlansScreen';
 
-export default ActivePlansScreen;
+import { ProtectedRouteGate } from '@/lib/components/common/ProtectedRouteGate';
+
+export default function ActivePlansRoute() {
+  return (
+    <ProtectedRouteGate routePath="/(app)/active-plans">
+      <ActivePlansScreen />
+    </ProtectedRouteGate>
+  );
+}

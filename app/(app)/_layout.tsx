@@ -2,6 +2,7 @@ import { Stack } from 'expo-router';
 import React, { useEffect } from 'react';
 
 import { useAuth } from '@/context/AuthContext';
+import { useNotificationsStore } from '@/lib/stores/notificationsStore';
 import { useRecentlyViewedStore } from '@/lib/stores/recentlyViewedStore';
 import { useWishlistStore } from '@/lib/stores/wishlistStore';
 import { FullScreenLoader } from '@/components/loaders';
@@ -9,17 +10,24 @@ import { FullScreenLoader } from '@/components/loaders';
 export default function AppRoutesLayout() {
   const hydrateRecentlyViewed = useRecentlyViewedStore((s) => s.hydrate);
   const initializeWishlist = useWishlistStore((s) => s.initializeForUser);
+  const initializeNotifications = useNotificationsStore((s) => s.initializeForUser);
+  const clearNotifications = useNotificationsStore((s) => s.clear);
   const { loading, user } = useAuth();
 
   useEffect(() => {
     if (!user?.id) return;
-    void Promise.all([hydrateRecentlyViewed(user.id), initializeWishlist(user.id)]);
-  }, [hydrateRecentlyViewed, initializeWishlist, user?.id]);
+    void Promise.all([
+      hydrateRecentlyViewed(user.id),
+      initializeWishlist(user.id),
+      initializeNotifications(user.id),
+    ]);
+  }, [hydrateRecentlyViewed, initializeWishlist, initializeNotifications, user?.id]);
 
   useEffect(() => {
     if (user?.id) return;
     void initializeWishlist(null);
-  }, [initializeWishlist, user?.id]);
+    clearNotifications();
+  }, [initializeWishlist, clearNotifications, user?.id]);
 
   if (loading) return <FullScreenLoader label="Restoring session..." />;
 

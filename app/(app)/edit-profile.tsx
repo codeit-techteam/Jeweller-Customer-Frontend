@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import React, { useCallback } from 'react';
 
+import { ProtectedRouteGate } from '@/lib/components/common/ProtectedRouteGate';
 import EditProfileScreen from '@/screens/EditProfileScreen';
 
 export default function EditProfileRoute() {
@@ -10,5 +11,9 @@ export default function EditProfileRoute() {
     else router.replace('/(app)/(tabs)/profile');
   }, [router]);
 
-  return <EditProfileScreen onBack={onBack} />;
+  return (
+    <ProtectedRouteGate routePath="/(app)/edit-profile">
+      <EditProfileScreen onBack={onBack} />
+    </ProtectedRouteGate>
+  );
 }

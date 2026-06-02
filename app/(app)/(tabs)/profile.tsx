@@ -20,16 +20,43 @@ import { ProfileMenuItem } from '@/lib/components/common/ProfileMenuItem';
 import { BottomTabBar } from '@/src/components/navigation/BottomTabBar';
 import { fontSizes, spacing } from '@/src/constants/theme';
 import { useAuth } from '@/context/AuthContext';
+import { useAuthGuard } from '@/src/hooks/useAuthGuard';
 import { ProfileSkeletonLoader } from '@/components/loaders';
+import { useNotificationsStore } from '@/lib/stores/notificationsStore';
 
 const NAVY = '#1a2b3c';
 const MUTED = '#707070';
 const BADGE_BG = '#f1f3f5';
 const TEAL_BG = '#5a9aa0';
+const GOLD = '#c29a33';
+
+type LockedCardProps = {
+  icon: React.ComponentProps<typeof MaterialIcons>['name'];
+  title: string;
+  subtitle: string;
+  onPress: () => void;
+};
+
+function LockedProfileCard({ icon, title, subtitle, onPress }: LockedCardProps) {
+  return (
+    <Pressable style={styles.lockedCard} onPress={onPress}>
+      <View style={styles.lockedIconWrap}>
+        <MaterialIcons name={icon} size={22} color={NAVY} />
+      </View>
+      <View style={styles.lockedTextWrap}>
+        <Text style={styles.lockedTitle}>{title}</Text>
+        <Text style={styles.lockedSubtitle}>{subtitle}</Text>
+      </View>
+      <MaterialIcons name="lock" size={18} color={GOLD} />
+    </Pressable>
+  );
+}
 
 export default function ProfileTabScreen() {
   const router = useRouter();
-  const { user, loading, logout, uploadProfileImage } = useAuth();
+  const { user, loading, logout, uploadProfileImage, isGuest, isAuthenticated } = useAuth();
+  const unreadNotificationsCount = useNotificationsStore((s) => s.unreadCount);
+  const requireAuth = useAuthGuard();
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
 
@@ -60,7 +87,13 @@ export default function ProfileTabScreen() {
   }, []);
 
   const onSettings = useCallback(() => {
-    router.push('/(app)/edit-profile');
+    requireAuth(() => router.push('/(app)/edit-profile'), {
+      pendingAction: { type: 'route', pathname: '/(app)/edit-profile' },
+    });
+  }, [requireAuth, router]);
+
+  const onLoginPress = useCallback(() => {
+    router.push('/(auth)/login');
   }, [router]);
 
   const onEditPhoto = useCallback(async () => {
@@ -91,13 +124,25 @@ export default function ProfileTabScreen() {
   const onConfirmLogout = useCallback(async () => {
     setLogoutModalVisible(false);
     await logout();
-    router.replace('/(auth)/login');
+    router.replace('/(app)/home');
   }, [logout, router]);
+
+  const guardRoute = useCallback(
+    (pathname: string) => {
+      requireAuth(() => router.push(pathname as never), {
+        pendingAction: { type: 'route', pathname },
+      });
+    },
+    [requireAuth, router],
+  );
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.body}>
-        <ProfileHeader onBack={onBack} onSettings={onSettings} />
+        <ProfileHeader
+          onBack={onBack}
+          onSettings={isAuthenticated ? onSettings : undefined}
+        />
 
         {loading ? (
           <ProfileSkeletonLoader />
@@ -117,65 +162,117 @@ export default function ProfileTabScreen() {
                 <Text style={styles.avatarInitials}>{userDisplay.initials}</Text>
               </View>
             )}
-            <Pressable style={styles.editFab} onPress={onEditPhoto} hitSlop={8}>
-              <MaterialIcons name={uploadingImage ? 'hourglass-top' : 'edit'} size={16} color="#fff" />
-            </Pressable>
+            {isAuthenticated ? (
+              <Pressable style={styles.editFab} onPress={onEditPhoto} hitSlop={8}>
+                <MaterialIcons name={uploadingImage ? 'hourglass-top' : 'edit'} size={16} color="#fff" />
+              </Pressable>
+            ) : null}
           </View>
           <Text style={styles.name}>{userDisplay.name}</Text>
-          <Text style={styles.phone}>{userDisplay.phone}</Text>
-          <Text style={styles.phone}>{userDisplay.email}</Text>
-          <View style={styles.memberBadge}>
-            <MaterialIcons name="check-circle" size={14} color={MUTED} />
-            <Text style={styles.memberText}>{user ? 'VERIFIED ACCOUNT' : 'GUEST ACCOUNT'}</Text>
+          {isAuthenticated ? (
+            <>
+              <Text style={styles.phone}>{userDisplay.phone}</Text>
+              <Text style={styles.phone}>{userDisplay.email}</Text>
+              <View style={styles.memberBadge}>
+                <MaterialIcons name="check-circle" size={14} color={MUTED} />
+                <Text style={styles.memberText}>VERIFIED ACCOUNT</Text>
+              </View>
+            </>
+          ) : (
+            <>
+              <View style={[styles.memberBadge, styles.guestBadge]}>
+                <MaterialIcons name="visibility" size={14} color={GOLD} />
+                <Text style={[styles.memberText, styles.guestBadgeText]}>Browsing as Guest</Text>
+              </View>
+              <Pressable style={styles.loginBtn} onPress={onLoginPress}>
+                <MaterialIcons name="login" size={18} color="#fff" />
+                <Text style={styles.loginBtnText}>Login / Sign Up</Text>
+              </Pressable>
+            </>
+          )}
+        </View>
+
+        {isGuest ? (
+          <View style={styles.menuBlock}>
+            <LockedProfileCard
+              icon="favorite-border"
+              title="Wishlist"
+              subtitle="Login to save products"
+              onPress={() => guardRoute('/(app)/wishlist')}
+            />
+            <LockedProfileCard
+              icon="event"
+              title="Appointments"
+              subtitle="Login to book visits"
+              onPress={() => guardRoute('/(app)/appointments')}
+            />
+            <LockedProfileCard
+              icon="storefront"
+              title="Saved Boutiques"
+              subtitle="Login to save boutiques"
+              onPress={() => guardRoute('/(app)/saved-boutiques')}
+            />
           </View>
-        </View>
+        ) : (
+          <>
+            <View style={styles.menuBlock}>
+              <ProfileMenuItem
+                icon="account-balance-wallet"
+                title="Active Plans"
+                badgeCount={2}
+                badgeTone="navy"
+                onPress={() => router.push('/(app)/active-plans')}
+              />
+              <ProfileMenuItem
+                icon="storefront"
+                title="Saved Boutiques"
+                onPress={() => router.push('/(app)/saved-boutiques')}
+              />
+              <ProfileMenuItem
+                icon="favorite-border"
+                title="Wishlist"
+                onPress={() => router.push('/(app)/wishlist')}
+              />
+              <ProfileMenuItem
+                icon="event"
+                title="My Appointments"
+                onPress={() => router.push('/(app)/appointments')}
+              />
+              <ProfileMenuItem
+                icon="notifications-none"
+                title="Notifications"
+                badgeCount={unreadNotificationsCount}
+                onPress={() => router.push('/(app)/notifications')}
+              />
+            </View>
 
-        <View style={styles.menuBlock}>
-          <ProfileMenuItem
-            icon="account-balance-wallet"
-            title="Active Plans"
-            badgeCount={2}
-            badgeTone="navy"
-            onPress={() => router.push('/(app)/active-plans')}
-          />
-          <ProfileMenuItem
-            icon="storefront"
-            title="Saved Boutiques"
-            onPress={() => router.push('/(app)/saved-boutiques')}
-          />
-          <ProfileMenuItem
-            icon="favorite-border"
-            title="Wishlist"
-            onPress={() => router.push('/(app)/wishlist')}
-          />
-          <ProfileMenuItem
-            icon="event"
-            title="My Appointments"
-            onPress={() => router.push('/(app)/appointments')}
-          />
-          <ProfileMenuItem
-            icon="notifications-none"
-            title="Notifications"
-            badgeCount={0}
-            onPress={() => router.push('/(app)/notifications')}
-          />
-        </View>
-
-        <Text style={styles.sectionEyebrow}>ACCOUNT ACTIONS</Text>
-        <View style={styles.accountBlock}>
-          <ProfileMenuItem
-            icon="shield"
-            title="Account Privacy"
-            onPress={() => router.push('/(app)/search')}
-          />
-          <ProfileMenuItem
-            icon="logout"
-            title="Logout"
-            showChevron={false}
-            variant="danger"
-            onPress={onLogoutPress}
-          />
-        </View>
+            <Text style={styles.sectionEyebrow}>ACCOUNT ACTIONS</Text>
+            <View style={styles.accountBlock}>
+              <ProfileMenuItem
+                icon="location-on"
+                title="Saved Addresses"
+                onPress={() => router.push('/(app)/address')}
+              />
+              <ProfileMenuItem
+                icon="receipt-long"
+                title="Order History"
+                onPress={() => router.push('/(app)/orders')}
+              />
+              <ProfileMenuItem
+                icon="shield"
+                title="Account Privacy"
+                onPress={() => router.push('/(app)/edit-profile')}
+              />
+              <ProfileMenuItem
+                icon="logout"
+                title="Logout"
+                showChevron={false}
+                variant="danger"
+                onPress={onLogoutPress}
+              />
+            </View>
+          </>
+        )}
 
         <Text style={styles.version}>Luxe Jewellery v2.4.1</Text>
         <View style={styles.footerLinks}>
@@ -281,13 +378,63 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: BADGE_BG,
   },
+  guestBadge: {
+    backgroundColor: 'rgba(194,154,51,0.12)',
+    marginTop: spacing.sm,
+  },
   memberText: {
     fontSize: 10,
     fontWeight: '800',
     color: '#4a5568',
     letterSpacing: 0.6,
   },
+  guestBadgeText: { color: GOLD },
+  loginBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.lg,
+    backgroundColor: NAVY,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: 999,
+  },
+  loginBtnText: {
+    color: '#fff',
+    fontSize: fontSizes.md,
+    fontWeight: '700',
+  },
   menuBlock: { marginBottom: spacing.lg },
+  lockedCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: '#F6F7F9',
+    marginBottom: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#e8eaed',
+  },
+  lockedIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#f8f9fa',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  lockedTextWrap: { flex: 1 },
+  lockedTitle: {
+    fontSize: fontSizes.sm,
+    fontWeight: '600',
+    color: NAVY,
+  },
+  lockedSubtitle: {
+    fontSize: fontSizes.xs,
+    color: MUTED,
+    marginTop: 2,
+  },
   sectionEyebrow: {
     fontSize: 10,
     fontWeight: '700',

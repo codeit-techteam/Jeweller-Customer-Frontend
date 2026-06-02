@@ -14,6 +14,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import Toast from 'react-native-toast-message';
 
 import { useCartStore } from '@/lib/stores/cartStore';
+import { ProtectedRouteGate } from '@/lib/components/common/ProtectedRouteGate';
 import { fontSizes, radius, spacing } from '@/src/constants/theme';
 
 const NAVY = '#0D1B2A';
@@ -31,7 +32,7 @@ type DeliveryType = 'home' | 'store';
 
 const MOCK_DELIVERY_ESTIMATE = 'Estimated delivery by Friday, 24th Oct';
 
-export default function AddressDetailsScreen() {
+function AddressDetailsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const items = useCartStore((s) => s.items);
@@ -475,3 +476,11 @@ const styles = StyleSheet.create({
   },
   proceedChevron: { marginLeft: 4, marginTop: 1 },
 });
+
+export default function AddressDetailsRoute() {
+  return (
+    <ProtectedRouteGate routePath="/(app)/address-details">
+      <AddressDetailsScreen />
+    </ProtectedRouteGate>
+  );
+}

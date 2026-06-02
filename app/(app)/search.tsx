@@ -70,7 +70,7 @@ import {
     removeSearchHistoryEntry,
 } from "@/services/api";
 import { normalizeSearchKeyword } from "@/lib/utils/normalizeSearchKeyword";
-import { useWishlistStore } from "@/lib/stores/wishlistStore";
+import { useWishlistIds, useWishlistStore } from "@/lib/stores/wishlistStore";
 import { BottomTabBar } from "@/src/components/navigation/BottomTabBar";
 import { fontSizes, spacing } from "@/src/constants/theme";
 
@@ -163,7 +163,7 @@ export default function SearchScreen() {
   const [query, setQuery] = useState("");
   const [recent, setRecent] = useState<RecentSearchEntry[]>([]);
   const [trendingChips, setTrendingChips] = useState<TrendingSearchChip[]>([]);
-  const wishIds = useWishlistStore((s) => s.ids);
+  const wishIds = useWishlistIds();
   const toggleWishlist = useWishlistStore((s) => s.toggle);
 
   const {

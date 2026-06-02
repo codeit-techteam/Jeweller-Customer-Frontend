@@ -327,11 +327,11 @@ export function mapProductsForProfile(
       (typeof ext.category_name === "string" ? ext.category_name.trim() : "") ||
       "Jewellery";
     const filterSource =
-      p.category?.name ??
       p.collection_name ??
       (typeof p.collection === "string" ? p.collection : "") ??
       p.boutique_collection?.slug ??
       p.boutique_collection?.name ??
+      p.category?.name ??
       "";
     const collection = normalizeFilterKey(filterSource) || "other";
     const img = p as { thumbnail?: string | null; primary_image?: string | null };

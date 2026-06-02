@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { RemoteImage } from '@/lib/components/common/RemoteImage';
 import { CHECKOUT_GST_RATE, resolveCartLineDisplay } from '@/lib/services/mock/cart';
 import { useCartStore } from '@/lib/stores/cartStore';
+import { useAuthGuard } from '@/src/hooks/useAuthGuard';
 import { fontSizes, radius, spacing } from '@/src/constants/theme';
 
 const NAVY = '#0D1B2A';
@@ -24,6 +25,7 @@ const PAY_ACTIVE = '#111827';
 
 export default function CartScreen() {
   const router = useRouter();
+  const requireAuth = useAuthGuard();
   const items = useCartStore((s) => s.items);
   const setLineQty = useCartStore((s) => s.setLineQty);
 
@@ -46,6 +48,16 @@ export default function CartScreen() {
   const inc = (productId: string, size: string, metal: string, qty: number) => {
     setLineQty(productId, size, metal, qty + 1);
   };
+
+  const onCheckout = useCallback(() => {
+    requireAuth(
+      () => router.push('/(app)/address-details'),
+      {
+        pendingAction: { type: 'checkout' },
+        analyticsEvent: 'checkout',
+      },
+    );
+  }, [requireAuth, router]);
 
   if (items.length === 0) {
     return (
@@ -156,6 +168,17 @@ export default function CartScreen() {
           </View>
         </View>
       </ScrollView>
+
+        <View style={styles.checkoutBar}>
+          <View>
+            <Text style={styles.checkoutLabel}>Total</Text>
+            <Text style={styles.checkoutTotal}>₹{fmt(total)}</Text>
+          </View>
+          <Pressable style={styles.checkoutBtn} onPress={onCheckout}>
+            <Text style={styles.checkoutBtnText}>Proceed to Checkout</Text>
+            <MaterialIcons name="arrow-forward" size={18} color="#fff" />
+          </Pressable>
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -289,4 +312,26 @@ const styles = StyleSheet.create({
     backgroundColor: NAVY,
   },
   emptyBtnText: { color: '#fff', fontWeight: '800', fontSize: fontSizes.sm },
+  checkoutBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#e8eaed',
+    backgroundColor: '#fff',
+  },
+  checkoutLabel: { fontSize: fontSizes.xs, color: MUTED, fontWeight: '600' },
+  checkoutTotal: { fontSize: fontSizes.lg, fontWeight: '800', color: NAVY },
+  checkoutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: NAVY,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: 999,
+  },
+  checkoutBtnText: { color: '#fff', fontWeight: '800', fontSize: fontSizes.sm },
 });

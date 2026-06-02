@@ -1,21 +1,44 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useMemo } from 'react';
+import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { NotificationItem } from '@/lib/components/common/NotificationItem';
-import type { NotificationModel } from '@/lib/services/mock/notifications';
-import { notificationsMock } from '@/lib/services/mock/notifications';
+import type { AppNotification } from '@/lib/services/notifications';
+import { useNotificationsStore } from '@/lib/stores/notificationsStore';
 import { fontSizes, spacing } from '@/src/constants/theme';
 
 type Row =
   | { kind: 'section'; id: string; label: string; showMarkAll?: boolean }
-  | { kind: 'item'; id: string; notification: NotificationModel };
+  | { kind: 'item'; id: string; notification: AppNotification };
 
-function buildRows(items: NotificationModel[]): Row[] {
-  const today = items.filter((i) => i.group === 'today');
-  const earlier = items.filter((i) => i.group === 'earlier');
+function relativeTime(dateIso: string): string {
+  const ts = new Date(dateIso).getTime();
+  const deltaMs = Date.now() - ts;
+  const min = Math.floor(deltaMs / (60 * 1000));
+  if (min < 1) return 'just now';
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const days = Math.floor(hr / 24);
+  if (days === 1) return 'Yesterday';
+  return `${days}d ago`;
+}
+
+function isToday(dateIso: string): boolean {
+  const d = new Date(dateIso);
+  const now = new Date();
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  );
+}
+
+function buildRows(items: AppNotification[]): Row[] {
+  const today = items.filter((i) => isToday(i.createdAt));
+  const earlier = items.filter((i) => !isToday(i.createdAt));
   const rows: Row[] = [];
   if (today.length > 0) {
     rows.push({ kind: 'section', id: 'sec-today', label: 'TODAY', showMarkAll: true });
@@ -30,24 +53,52 @@ function buildRows(items: NotificationModel[]): Row[] {
 
 export default function NotificationsScreen() {
   const router = useRouter();
-  const [notifications, setNotifications] = useState<NotificationModel[]>(() => [...notificationsMock]);
+  const notifications = useNotificationsStore((s) => s.items);
+  const loading = useNotificationsStore((s) => s.loading);
+  const loadingMore = useNotificationsStore((s) => s.loadingMore);
+  const refreshing = useNotificationsStore((s) => s.refreshing);
+  const hasMore = useNotificationsStore((s) => s.hasMore);
+  const error = useNotificationsStore((s) => s.error);
+  const refresh = useNotificationsStore((s) => s.refresh);
+  const loadMore = useNotificationsStore((s) => s.loadMore);
+  const markReadStore = useNotificationsStore((s) => s.markRead);
+  const markAllReadStore = useNotificationsStore((s) => s.markAllRead);
 
   const rows = useMemo(() => buildRows(notifications), [notifications]);
 
   const markRead = useCallback((id: string) => {
-    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)));
-  }, []);
+    void markReadStore(id);
+  }, [markReadStore]);
 
   const markAllTodayRead = useCallback(() => {
-    setNotifications((prev) => prev.map((n) => (n.group === 'today' ? { ...n, isRead: true } : n)));
-  }, []);
+    void markAllReadStore();
+  }, [markAllReadStore]);
 
-  const onTrackOrder = useCallback(
-    (id: string) => {
-      markRead(id);
-      console.log('[Notifications] Track order:', id);
+  const openFromNotification = useCallback(
+    (n: AppNotification) => {
+      markRead(n.id);
+      const data = n.data ?? {};
+      const route = typeof data.route === 'string' ? data.route : null;
+      const routeParams =
+        data.routeParams && typeof data.routeParams === 'object'
+          ? (data.routeParams as Record<string, string>)
+          : undefined;
+
+      if (route) {
+        router.push({ pathname: route as never, params: routeParams as never });
+        return;
+      }
+
+      const sourceEvent = typeof data.source_event === 'string' ? data.source_event : '';
+      if (n.type === 'order' || sourceEvent.includes('order')) {
+        router.push('/(app)/orders');
+      } else if (sourceEvent.includes('appointment') || sourceEvent.includes('book_visit')) {
+        router.push('/(app)/appointments');
+      } else if (sourceEvent.includes('offer') || sourceEvent.includes('collection')) {
+        router.push('/(app)/home');
+      }
     },
-    [markRead],
+    [markRead, router],
   );
 
   return (
@@ -62,7 +113,12 @@ export default function NotificationsScreen() {
         </Pressable>
       </View>
 
-      {notifications.length === 0 ? (
+      {loading ? (
+        <View style={styles.emptyWrap}>
+          <ActivityIndicator color="#1e40af" size="small" />
+          <Text style={styles.emptySub}>Loading notifications...</Text>
+        </View>
+      ) : notifications.length === 0 ? (
         <View style={styles.emptyWrap}>
           <MaterialIcons name="notifications-none" size={56} color="#cbd5e1" />
           <Text style={styles.emptyTitle}>No notifications</Text>
@@ -74,6 +130,15 @@ export default function NotificationsScreen() {
           keyExtractor={(r) => r.id}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} tintColor="#1e40af" />
+          }
+          onEndReachedThreshold={0.5}
+          onEndReached={() => {
+            if (hasMore && !loadingMore) {
+              void loadMore();
+            }
+          }}
           renderItem={({ item, index }) => {
             if (item.kind === 'section') {
               return (
@@ -90,16 +155,37 @@ export default function NotificationsScreen() {
               );
             }
             const n = item.notification;
+            const actionLabel = n.type === 'order' ? 'Track Order' : undefined;
             return (
               <NotificationItem
-                item={n}
-                onPress={() => markRead(n.id)}
-                onActionPress={n.action ? () => onTrackOrder(n.id) : undefined}
+                item={{
+                  ...n,
+                  timeLabel: relativeTime(n.createdAt),
+                  imageUri:
+                    typeof n.data?.imageUri === 'string'
+                      ? n.data.imageUri
+                      : typeof n.data?.image === 'string'
+                        ? n.data.image
+                        : undefined,
+                  actionLabel,
+                }}
+                onPress={() => openFromNotification(n)}
+                onActionPress={actionLabel ? () => openFromNotification(n) : undefined}
               />
             );
           }}
           ListFooterComponent={
-            <Text style={styles.footerEnd}>You&apos;ve reached the end of your notifications.</Text>
+            <>
+              {loadingMore ? (
+                <View style={styles.footerLoader}>
+                  <ActivityIndicator color="#64748b" size="small" />
+                </View>
+              ) : null}
+              {error ? <Text style={styles.footerError}>{error}</Text> : null}
+              {!hasMore && notifications.length > 0 ? (
+                <Text style={styles.footerEnd}>You&apos;ve reached the end of your notifications.</Text>
+              ) : null}
+            </>
           }
         />
       )}
@@ -186,5 +272,14 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     textAlign: 'center',
     lineHeight: 20,
+  },
+  footerLoader: {
+    paddingVertical: spacing.md,
+  },
+  footerError: {
+    textAlign: 'center',
+    fontSize: fontSizes.xs,
+    color: '#dc2626',
+    marginTop: spacing.sm,
   },
 });

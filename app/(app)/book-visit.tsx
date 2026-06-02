@@ -31,8 +31,10 @@ import {
 } from '@/lib/utils/formatBoutiqueDistance';
 import { productPrimaryUri } from '@/lib/services/mock/imageUrls';
 import { createAppointment, getBoutiqueById, getProductById } from '@/services/api';
+import { createAppointmentBookedNotifications } from '@/lib/services/notifications';
 import { calculateDistanceKm, parseCoord } from '@/utils/calculateDistance';
 import { fontSizes, radius, spacing } from '@/src/constants/theme';
+import { useAuth } from '@/context/AuthContext';
 
 const NAVY = '#0f172a';
 const GOLD = '#b08d57';
@@ -59,6 +61,7 @@ function paramStr(raw: string | string[] | undefined): string | undefined {
 
 export default function BookVisitScreen() {
   const router = useRouter();
+  const { user } = useAuth();
   const params = useLocalSearchParams<{
     boutiqueId?: string | string[];
     productId?: string | string[];
@@ -317,7 +320,7 @@ export default function BookVisitScreen() {
     setSubmitting(true);
     try {
       const result = await createAppointment({
-        userId: null,
+        userId: user?.id ?? null,
         boutiqueId: profile.id,
         date: selectedDateKey,
         time: toHHMM(selectedTime),
@@ -327,6 +330,16 @@ export default function BookVisitScreen() {
         customerPhone: phone.trim() || null,
         serviceRequested: product?.name ?? null,
       });
+      if (user?.id) {
+        await createAppointmentBookedNotifications({
+          userId: user.id,
+          appointmentId: result.id,
+          boutiqueId: profile.id,
+          boutiqueName: profile.name,
+          date: selectedDateKey,
+          time: selectedTime,
+        });
+      }
       const d = parseISO(selectedDateKey);
       const dateFormatted = format(d, 'do MMM');
       router.push({

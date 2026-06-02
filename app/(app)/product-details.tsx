@@ -44,7 +44,8 @@ import { snapshotFromProductDetail } from "@/lib/services/mock/wishlist";
 import { useCartStore } from "@/lib/stores/cartStore";
 import { useRecentlyViewedStore } from "@/lib/stores/recentlyViewedStore";
 import { addRecentlyViewed } from "@/services/api";
-import { recordProductViewAnalytics } from "@/services/analyticsTracking";
+import { recordProductViewAnalytics, trackGuestViewedProduct } from "@/services/analyticsTracking";
+import { useAuthGuard } from "@/src/hooks/useAuthGuard";
 import { fontSizes, radius, spacing } from "@/src/constants/theme";
 
 const GOLD = "#c29a33";
@@ -131,7 +132,8 @@ export default function ProductDetailsScreen() {
 
   const addItem = useCartStore((s) => s.addItem);
   const trackProductView = useRecentlyViewedStore((s) => s.trackProductView);
-  const { user } = useAuth();
+  const { user, isGuest } = useAuth();
+  const requireAuth = useAuthGuard();
 
   // Fetch ONCE per product id. Never auto-triggered on focus, render, or
   // state changes — that previously caused an infinite refetch loop because
@@ -192,6 +194,9 @@ export default function ProductDetailsScreen() {
     const boutiqueId = product.boutique.id;
     if (boutiqueId) {
       recordProductViewAnalytics(boutiqueId, product.id, user?.id ?? null);
+      if (isGuest) {
+        trackGuestViewedProduct(product.id, boutiqueId);
+      }
     }
     const imageUri = product.images[0]?.uri ?? "";
     void trackProductView(
@@ -557,15 +562,29 @@ export default function ProductDetailsScreen() {
               category: product.category,
               boutique_id: product.boutique_id ?? product.boutique.id,
             };
-            router.push({
-              pathname: "/(app)/book-visit",
-              params: {
-                productId: product.id,
-                boutiqueId: product.boutique.id,
-                productData: JSON.stringify(productPayload),
-                boutiqueData: JSON.stringify(boutiquePayload),
+            const visitParams = {
+              productId: product.id,
+              boutiqueId: product.boutique.id,
+              productData: JSON.stringify(productPayload),
+              boutiqueData: JSON.stringify(boutiquePayload),
+            };
+            requireAuth(
+              () => {
+                router.push({
+                  pathname: "/(app)/book-visit",
+                  params: visitParams,
+                });
               },
-            });
+              {
+                pendingAction: {
+                  type: "book_visit",
+                  boutiqueId: product.boutique.id,
+                  productId: product.id,
+                  params: visitParams,
+                },
+                analyticsEvent: "book_visit",
+              },
+            );
           }}
         >
           <Text style={styles.bookBtnText}>Book Store Visit</Text>

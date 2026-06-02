@@ -5,12 +5,13 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useCartStore } from '@/lib/stores/cartStore';
+import { ProtectedRouteGate } from '@/lib/components/common/ProtectedRouteGate';
 import { fontSizes, spacing } from '@/src/constants/theme';
 
 const NAVY = '#0f172a';
 
 /** Minimal payment step after address — completes checkout */
-export default function PaymentScreen() {
+function PaymentScreen() {
   const router = useRouter();
   const clear = useCartStore((s) => s.clear);
 
@@ -72,3 +73,11 @@ const styles = StyleSheet.create({
   },
   btnText: { color: '#fff', fontWeight: '800', fontSize: fontSizes.md },
 });
+
+export default function PaymentRoute() {
+  return (
+    <ProtectedRouteGate routePath="/(app)/payment">
+      <PaymentScreen />
+    </ProtectedRouteGate>
+  );
+}

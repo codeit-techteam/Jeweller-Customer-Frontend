@@ -9,7 +9,7 @@ const NAVY = '#1a2b3c';
 type ProfileHeaderProps = {
   title?: string;
   onBack: () => void;
-  onSettings: () => void;
+  onSettings?: () => void;
 };
 
 export function ProfileHeader({ title = 'PROFILE', onBack, onSettings }: ProfileHeaderProps) {
@@ -24,9 +24,13 @@ export function ProfileHeader({ title = 'PROFILE', onBack, onSettings }: Profile
         <Text style={styles.title}>{title}</Text>
       </View>
       <View style={[styles.slot, styles.slotRight]}>
-        <Pressable hitSlop={12} onPress={onSettings} accessibilityRole="button" accessibilityLabel="Settings">
-          <MaterialIcons name="settings" size={24} color="#111" />
-        </Pressable>
+        {onSettings ? (
+          <Pressable hitSlop={12} onPress={onSettings} accessibilityRole="button" accessibilityLabel="Settings">
+            <MaterialIcons name="settings" size={24} color="#111" />
+          </Pressable>
+        ) : (
+          <View style={{ width: 24 }} />
+        )}
       </View>
     </View>
   );
