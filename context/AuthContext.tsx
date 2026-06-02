@@ -17,6 +17,7 @@ import {
     uploadProfileImage as uploadProfileImageToStorage,
     verifyDevOtp,
 } from "@/services/authService";
+import { linkVisitorToCustomerUser } from "@/services/analyticsTracking";
 
 const SESSION_KEY = "user_session";
 const DEV_AUTH_ENABLED = appConfig.devAuth;
@@ -128,6 +129,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const payload = { ...u, isLoggedIn: true };
     await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(payload));
     setUser(u);
+    linkVisitorToCustomerUser(u.id);
   };
 
   const login = async (phoneRaw: string): Promise<"ok" | "not-found"> => {

@@ -43,6 +43,7 @@ import { useSavedBoutiquesStore } from "@/lib/stores/savedBoutiquesStore";
 import { showPopup } from "@/lib/stores/popupStore";
 import { applyLiveHoursToProfile } from "@/services/boutique.service";
 import { addRecentlyViewed } from "@/services/api";
+import { recordBoutiqueVisitAnalytics } from "@/services/analyticsTracking";
 import { fontSizes, radius, spacing } from "@/src/constants/theme";
 
 const NAVY = "#0a1a33";
@@ -160,6 +161,7 @@ export default function BoutiqueProfileScreen() {
 
   useEffect(() => {
     if (!profile) return;
+    recordBoutiqueVisitAnalytics(profile.id, user?.id ?? null);
     void trackBoutiqueVisit(
       {
         id: profile.id,

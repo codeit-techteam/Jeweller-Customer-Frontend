@@ -44,6 +44,7 @@ import { snapshotFromProductDetail } from "@/lib/services/mock/wishlist";
 import { useCartStore } from "@/lib/stores/cartStore";
 import { useRecentlyViewedStore } from "@/lib/stores/recentlyViewedStore";
 import { addRecentlyViewed } from "@/services/api";
+import { recordProductViewAnalytics } from "@/services/analyticsTracking";
 import { fontSizes, radius, spacing } from "@/src/constants/theme";
 
 const GOLD = "#c29a33";
@@ -188,6 +189,10 @@ export default function ProductDetailsScreen() {
   // Record a recently-viewed entry once per (product, user) pair.
   useEffect(() => {
     if (!product) return;
+    const boutiqueId = product.boutique.id;
+    if (boutiqueId) {
+      recordProductViewAnalytics(boutiqueId, product.id, user?.id ?? null);
+    }
     const imageUri = product.images[0]?.uri ?? "";
     void trackProductView(
       {
