@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Image, StyleSheet, View, type ImageStyle, type StyleProp } from 'react-native';
+import { Animated, Platform, StyleSheet, View, type ImageStyle, type StyleProp } from 'react-native';
 
 import {
   IMAGE_FALLBACK_SECONDARY,
@@ -25,7 +25,7 @@ function fallbackChain(primary: string): string[] {
 /**
  * Always renders real remote jewellery/retail imagery — no grey placeholder views.
  */
-export function RemoteImage({ uri, style, resizeMode = 'cover' }: Props) {
+function RemoteImageComponent({ uri, style, resizeMode = 'cover' }: Props) {
   const primary = useMemo(
     () =>
       uri && typeof uri === 'string' && uri.trim().startsWith('http') ? uri.trim() : PLACEHOLDER_IMAGE_URI,
@@ -52,6 +52,8 @@ export function RemoteImage({ uri, style, resizeMode = 'cover' }: Props) {
         source={{ uri: src }}
         style={[style, { opacity }]}
         resizeMode={resizeMode}
+        fadeDuration={Platform.OS === 'android' ? 0 : 220}
+        progressiveRenderingEnabled
         onLoadEnd={() => {
           setLoading(false);
           Animated.timing(opacity, { toValue: 1, duration: 220, useNativeDriver: true }).start();
@@ -61,6 +63,8 @@ export function RemoteImage({ uri, style, resizeMode = 'cover' }: Props) {
     </View>
   );
 }
+
+export const RemoteImage = React.memo(RemoteImageComponent);
 
 const styles = StyleSheet.create({
   container: {

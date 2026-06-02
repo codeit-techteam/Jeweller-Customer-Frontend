@@ -11,6 +11,7 @@ import { FlatList, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ProductSkeletonLoader } from "@/components/loaders";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { EmptyState } from "@/lib/components/common/EmptyState";
 import {
     ListingProductCard,
@@ -38,6 +39,7 @@ import { snapshotFromListingFields } from "@/lib/services/mock/wishlist";
 import { getRelationshipSectionListing } from "@/services/api";
 import { useProductListingFiltersStore } from "@/lib/stores/productListingFiltersStore";
 import { useWishlistIds, useWishlistStore } from "@/lib/stores/wishlistStore";
+import { FLAT_LIST_WINDOWED_PROPS } from "@/lib/constants/flatListPerformance";
 import { fontSizes, radius, spacing } from "@/src/constants/theme";
 
 const UUID_V4_LIKE =
@@ -252,8 +254,11 @@ export default function CategoryProductsScreen() {
     titleOverride ||
     (relationshipMode ? "Curated picks" : category === "ALL" ? "All jewellery" : category);
 
-  const fetchProducts = useCallback(async () => {
-    setLoading(true);
+  const fetchProducts = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent ?? false;
+    if (!silent) {
+      setLoading(true);
+    }
     try {
       if (relationshipMode && relationshipSectionId) {
         const res = await getRelationshipSectionListing(relationshipSectionId);
@@ -274,9 +279,15 @@ export default function CategoryProductsScreen() {
     } catch {
       setError("Unable to load products");
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   }, [relationshipMode, relationshipSectionId]);
+
+  const { refreshControl } = usePullToRefresh(
+    useCallback(() => fetchProducts({ silent: true }), [fetchProducts]),
+  );
 
   useLayoutEffect(() => {
     navigation.setOptions({ title: displayTitle });
@@ -315,12 +326,14 @@ export default function CategoryProductsScreen() {
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
       <View style={styles.flex}>
         <FlatList
+          {...FLAT_LIST_WINDOWED_PROPS}
           style={styles.list}
           data={filteredProducts}
           keyExtractor={(item) => item.id}
           numColumns={2}
           contentContainerStyle={styles.content}
           columnWrapperStyle={styles.rowWrap}
+          refreshControl={refreshControl}
           ListHeaderComponent={
             <View style={styles.header}>
               <Text style={styles.headerTitle}>{displayTitle}</Text>

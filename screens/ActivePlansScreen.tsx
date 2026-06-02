@@ -1,11 +1,13 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { useRouter } from 'expo-router';
-import React, { useCallback } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import * as Haptics from 'expo-haptics';
+import React, { useCallback, useState } from 'react';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ComingSoonModal } from '@/lib/components/common/ComingSoonModal';
 import { MyHeader } from '@/lib/components/common/MyHeader';
 import { PlanCard } from '@/lib/components/common/PlanCard';
+import type { ComingSoonPlanId } from '@/lib/config/comingSoonPlans';
 
 const BG = '#ffffff';
 const NAVY = '#0B1C2C';
@@ -15,19 +17,14 @@ const SUBTLE = '#9CA3AF';
 const H_PAD = 16;
 
 export default function ActivePlansScreen() {
-  const router = useRouter();
+  const [comingSoonPlan, setComingSoonPlan] = useState<ComingSoonPlanId | null>(null);
 
-  const openGoldReserve = useCallback(() => {
-    router.push('/(app)/gold-reserve-plan');
-  }, [router]);
-
-  const openGoldMine = useCallback(() => {
-    router.push('/(app)/gold-mine-plan');
-  }, [router]);
-
-  const onExplorePlans = useCallback(() => {
-    router.push('/(app)/gold-reserve-plan');
-  }, [router]);
+  const openComingSoon = useCallback((planId: ComingSoonPlanId) => {
+    if (Platform.OS !== 'web') {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    setComingSoonPlan(planId);
+  }, []);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -52,13 +49,13 @@ export default function ActivePlansScreen() {
             validity="Valid till Dec 2026"
             highlight
             progress={{ current: 7, total: 10, unit: 'months' }}
-            onPress={openGoldReserve}
+            onPress={() => openComingSoon('gold_reserve')}
           />
           <PlanCard
             title="Gold Mine 10+"
             subtitle="Monthly savings plan"
             validity="Renews monthly"
-            onPress={openGoldMine}
+            onPress={() => openComingSoon('gold_mine')}
           />
         </View>
 
@@ -77,13 +74,19 @@ export default function ActivePlansScreen() {
           </View>
         </View>
         <Pressable
-          onPress={onExplorePlans}
+          onPress={() => openComingSoon('gold_reserve')}
           style={({ pressed }) => [styles.exploreCta, pressed && styles.pressed]}
         >
           <Text style={styles.exploreCtaText}>Explore New Plans</Text>
           <MaterialIcons name="arrow-forward" size={16} color="#fff" />
         </Pressable>
       </ScrollView>
+
+      <ComingSoonModal
+        visible={comingSoonPlan !== null}
+        planId={comingSoonPlan ?? 'gold_mine'}
+        onClose={() => setComingSoonPlan(null)}
+      />
     </SafeAreaView>
   );
 }

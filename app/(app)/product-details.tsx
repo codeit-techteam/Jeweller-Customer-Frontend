@@ -25,8 +25,18 @@ import { BoutiqueStatusBadge } from "@/lib/components/common/BoutiqueStatusBadge
 import { ProductSkeletonLoader } from "@/components/loaders";
 import { useAuth } from "@/context/AuthContext";
 import { EmptyState } from "@/lib/components/common/EmptyState";
-import { GoldMineModal } from "@/lib/components/common/GoldMineModal";
-import { ProductImageSlider } from "@/lib/components/common/ProductImageSlider";
+import { lazyNamedScreen } from "@/lib/utils/lazyScreen";
+
+const ProductImageSlider = lazyNamedScreen(
+  () => import("@/lib/components/common/ProductImageSlider"),
+  "ProductImageSlider",
+);
+
+const GoldMineModal = lazyNamedScreen(
+  () => import("@/lib/components/common/GoldMineModal"),
+  "GoldMineModal",
+  { fallback: null },
+);
 import { ProductInfo } from "@/lib/components/common/ProductInfo";
 import {
     JewelleryMetalSegments,
@@ -791,13 +801,15 @@ export default function ProductDetailsScreen() {
         </Pressable>
       </View>
 
-      <GoldMineModal
-        visible={goldMineOpen}
-        onClose={() => setGoldMineOpen(false)}
-        productName={product.name}
-        productPrice={product.price}
-        imageUri={product.images[0]?.uri}
-      />
+      {goldMineOpen ? (
+        <GoldMineModal
+          visible={goldMineOpen}
+          onClose={() => setGoldMineOpen(false)}
+          productName={product.name}
+          productPrice={product.price}
+          imageUri={product.images[0]?.uri}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }

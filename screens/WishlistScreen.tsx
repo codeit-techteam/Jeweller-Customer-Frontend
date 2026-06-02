@@ -4,6 +4,7 @@ import React, { useCallback, useMemo, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { WishlistCard } from "@/lib/components/common/WishlistCard";
 import { CartNavIcon } from "@/lib/components/common/CartNavIcon";
 import { pushProductDetails } from "@/lib/navigation/productNavigation";
@@ -13,6 +14,7 @@ import {
 } from "@/lib/services/wishlistMoveToCartAction";
 import { useCartStore } from "@/lib/stores/cartStore";
 import { useWishlistStore } from "@/lib/stores/wishlistStore";
+import { FLAT_LIST_WINDOWED_PROPS } from "@/lib/constants/flatListPerformance";
 import { fontSizes, spacing } from "@/src/constants/theme";
 
 const NAVY = "#0f172a";
@@ -25,6 +27,7 @@ export default function WishlistScreen() {
   const items = useWishlistStore((s) => s.items);
   const loading = useWishlistStore((s) => s.loading);
   const toggleWishlist = useWishlistStore((s) => s.toggle);
+  const refreshWishlist = useWishlistStore((s) => s.refresh);
   const cartCount = useCartStore((s) =>
     s.items.reduce((acc, line) => acc + line.qty, 0),
   );
@@ -44,6 +47,10 @@ export default function WishlistScreen() {
       void toggleWishlist(id);
     },
     [toggleWishlist],
+  );
+
+  const { refreshControl } = usePullToRefresh(
+    useCallback(() => refreshWishlist({ silent: true }), [refreshWishlist]),
   );
 
   const onMoveToCart = useCallback(
@@ -114,12 +121,14 @@ export default function WishlistScreen() {
         </View>
       ) : (
         <FlatList
+          {...FLAT_LIST_WINDOWED_PROPS}
           data={rows}
           keyExtractor={(item) => item.id}
           numColumns={2}
           columnWrapperStyle={styles.column}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          refreshControl={refreshControl}
           renderItem={({ item }) => (
             <WishlistCard
               item={item}

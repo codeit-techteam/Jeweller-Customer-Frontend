@@ -3,7 +3,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { CollectionScreen } from '@/lib/components/collections/CollectionScreen';
+import { lazyNamedScreen } from '@/lib/utils/lazyScreen';
+
+const CollectionScreen = lazyNamedScreen(
+  () => import('@/lib/components/collections/CollectionScreen'),
+  'CollectionScreen',
+);
 import {
   fetchCollectionBySlugUi,
   fetchGiftCollectionsUi,

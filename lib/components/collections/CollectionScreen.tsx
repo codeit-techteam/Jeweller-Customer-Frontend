@@ -24,6 +24,7 @@ import {
 
 import { ProductSkeletonLoader } from "@/components/loaders";
 import { useCollectionProducts } from "@/hooks/useProductCatalog";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { pushProductDetails } from "@/lib/navigation/productNavigation";
 import { CollectionHero } from "@/lib/components/common/CollectionHero";
 import {
@@ -213,6 +214,10 @@ export function CollectionScreen({ config, collectionSlug }: Props) {
     error: productsError,
     refetch,
   } = useCollectionProducts(collectionSlug);
+
+  const { refreshControl } = usePullToRefresh(
+    useCallback(() => refetch(), [refetch]),
+  );
 
   const allProducts = backendProducts;
   const splitIndex = Math.min(4, allProducts.length);
@@ -570,6 +575,7 @@ export function CollectionScreen({ config, collectionSlug }: Props) {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scroll}
         stickyHeaderIndices={[1]}
+        refreshControl={refreshControl}
       >
         <CollectionHero
           imageUri={config.heroUri}

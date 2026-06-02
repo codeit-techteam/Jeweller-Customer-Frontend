@@ -26,6 +26,7 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { useAuthGuard } from "@/src/hooks/useAuthGuard";
 import { useBoutique } from "@/hooks/useBoutique";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import {
   normalizeFilterKey,
   preloadBoutiqueBannerUris,
@@ -82,6 +83,12 @@ export default function BoutiqueProfileScreen() {
   const params = useLocalSearchParams<{ id?: string | string[] }>();
   const id = paramId(params.id);
   const boutiqueQuery = useBoutique(id);
+  const { refreshControl } = usePullToRefresh(
+    useCallback(async () => {
+      await boutiqueQuery.refetch();
+    }, [boutiqueQuery.refetch]),
+    { enabled: Boolean(id) },
+  );
   const [minuteTick, setMinuteTick] = useState(0);
   const profile = useMemo(() => {
     const base = boutiqueQuery.data ?? null;
@@ -363,6 +370,7 @@ export default function BoutiqueProfileScreen() {
             styles.scrollContent,
             { paddingBottom: 120 + insets.bottom },
           ]}
+          refreshControl={refreshControl}
         >
           <View style={styles.bannerWrap}>
             <FlatList

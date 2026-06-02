@@ -57,7 +57,7 @@ type SavedBoutiquesState = {
   /** User id for which the store has been hydrated. */
   hydratedUserId: string | null;
   /** Hydrate saved boutiques for a given user from backend. */
-  hydrateForUser: (userId: string) => Promise<void>;
+  hydrateForUser: (userId: string, opts?: { silent?: boolean }) => Promise<void>;
   /** Optimistically save a boutique for a user and sync with backend. */
   saveForUser: (userId: string, boutiqueId: string) => Promise<void>;
   /** Optimistically unsave a boutique for a user and sync with backend. */
@@ -72,11 +72,13 @@ export const useSavedBoutiquesStore = create<SavedBoutiquesState>((set, get) => 
   loading: false,
   hydratedUserId: null,
 
-  hydrateForUser: async (userId: string) => {
+  hydrateForUser: async (userId: string, opts) => {
     if (!userId) return;
     console.log('CURRENT USER:', userId);
     console.log('FETCHING SAVED BOUTIQUES');
-    set({ loading: true });
+    if (!opts?.silent) {
+      set({ loading: true });
+    }
     try {
       const data = await getSavedBoutiques(userId);
       console.log('RAW SAVED DATA:', data);

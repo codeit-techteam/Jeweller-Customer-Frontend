@@ -48,7 +48,7 @@ type Props = {
  * `position: 'absolute'` during merge — which caused the heart to render as
  * a block element below the image on Trending/Rings.
  */
-export function ListingProductCard({
+function ListingProductCardComponent({
   item,
   onPress,
   isWishlisted,
@@ -112,6 +112,8 @@ export function ListingProductCard({
     </View>
   );
 }
+
+export const ListingProductCard = React.memo(ListingProductCardComponent);
 
 const styles = StyleSheet.create({
   card: {

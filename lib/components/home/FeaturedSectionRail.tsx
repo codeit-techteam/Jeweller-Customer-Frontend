@@ -11,6 +11,7 @@ import {
 import { RemoteImage } from "@/lib/components/common/RemoteImage";
 import { pushProductDetails } from "@/lib/navigation/productNavigation";
 import type { FeaturedSectionUi } from "@/lib/services/catalogApi";
+import { FLAT_LIST_HORIZONTAL_PROPS } from "@/lib/constants/flatListPerformance";
 import { fontSizes, radius, spacing } from "@/src/constants/theme";
 
 type Props = {
@@ -39,6 +40,7 @@ export function FeaturedSectionRail({ section, cardWidth = 168 }: Props) {
         </View>
       </View>
       <FlatList
+        {...FLAT_LIST_HORIZONTAL_PROPS}
         data={section.products}
         horizontal
         keyExtractor={(item) => item.id}

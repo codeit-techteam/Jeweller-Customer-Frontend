@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CategorySkeletonLoader } from '@/components/loaders';
 import { useNetworkReachable } from '@/hooks/useNetworkReachable';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { CollectionExploreCard } from '@/lib/components/common/CollectionExploreCard';
 import { RemoteImage } from '@/lib/components/common/RemoteImage';
 import { SearchBar } from '@/lib/components/common/SearchBar';
@@ -61,8 +62,11 @@ export default function CategoriesScreen() {
   const [error, setError] = useState<string | null>(null);
   const reachable = useNetworkReachable();
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  const loadData = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent ?? false;
+    if (!silent) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const [rows, collectionRows] = await Promise.all([fetchCategoriesUi(), fetchCollectionsUi()]);
@@ -74,9 +78,15 @@ export default function CategoriesScreen() {
       const message = err instanceof ApiError ? err.message : 'Unable to load categories';
       setError(message);
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   }, []);
+
+  const { refreshControl } = usePullToRefresh(
+    useCallback(() => loadData({ silent: true }), [loadData]),
+  );
 
   useEffect(() => {
     void loadData();
@@ -98,6 +108,7 @@ export default function CategoriesScreen() {
             showsVerticalScrollIndicator={false}
             contentContainerStyle={[styles.container, { paddingHorizontal: horizontalPad }]}
             nestedScrollEnabled
+            refreshControl={refreshControl}
           >
             <View style={styles.pageHeader}>
               <Text style={styles.pageTitle}>All Categories</Text>

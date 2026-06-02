@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { useUserLocation } from '@/hooks/useUserLocation';
 import { haversineDistanceKm } from '@/lib/boutiques/boutiqueUi';
 import { parseCoord } from '@/utils/calculateDistance';
@@ -75,6 +76,14 @@ export default function SavedBoutiquesScreen() {
       if (!user?.id) return;
       void hydrateForUser(user.id);
     }, [hydrateForUser, user?.id]),
+  );
+
+  const { refreshControl } = usePullToRefresh(
+    useCallback(async () => {
+      if (!user?.id) return;
+      await hydrateForUser(user.id, { silent: true });
+    }, [hydrateForUser, user?.id]),
+    { enabled: Boolean(user?.id) },
   );
 
   const itinerarySummary = useMemo(() => {
@@ -227,6 +236,7 @@ export default function SavedBoutiquesScreen() {
           keyExtractor={(item) => item.id}
           extraData={[ids, userCoords]}
           nestedScrollEnabled
+          refreshControl={refreshControl}
           ListHeaderComponent={ListHeader}
           ListEmptyComponent={<View>{Empty}</View>}
           contentContainerStyle={styles.listContent}

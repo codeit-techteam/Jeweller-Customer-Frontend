@@ -2,7 +2,9 @@ import { useRouter } from 'expo-router';
 import React, { useCallback } from 'react';
 
 import { ProtectedRouteGate } from '@/lib/components/common/ProtectedRouteGate';
-import EditProfileScreen from '@/screens/EditProfileScreen';
+import { lazyScreen } from '@/lib/utils/lazyScreen';
+
+const EditProfileScreen = lazyScreen(() => import('@/screens/EditProfileScreen'));
 
 export default function EditProfileRoute() {
   const router = useRouter();

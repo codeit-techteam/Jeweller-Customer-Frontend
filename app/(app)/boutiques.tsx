@@ -21,6 +21,7 @@ import {
 } from "@/components/boutiques/BoutiqueSortDropdown";
 import { BoutiqueSkeletonLoader } from "@/components/loaders";
 import { useNetworkReachable } from "@/hooks/useNetworkReachable";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { useUserLocation } from "@/hooks/useUserLocation";
 import type { BoutiqueUiListItem } from "@/lib/boutiques/boutiqueUi";
 import { BoutiqueStatusBadge } from "@/lib/components/common/BoutiqueStatusBadge";
@@ -156,8 +157,11 @@ export default function BoutiquesScreen() {
     [rawBoutiques, userCoords],
   );
 
-  const loadBoutiques = useCallback(async () => {
-    setLoading(true);
+  const loadBoutiques = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent ?? false;
+    if (!silent) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const rows = await fetchBoutiquesUi();
@@ -169,9 +173,15 @@ export default function BoutiquesScreen() {
         err instanceof ApiError ? err.message : "Unable to load boutiques";
       setError(message);
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   }, []);
+
+  const { refreshControl } = usePullToRefresh(
+    useCallback(() => loadBoutiques({ silent: true }), [loadBoutiques]),
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -388,6 +398,7 @@ export default function BoutiquesScreen() {
         keyExtractor={(item) => item.id}
         extraData={`${searchQuery}-${selectedSort}-${selectedDistance}-${locationLoading}-${locationPermission}-${userCoords?.lat ?? ""}-${userCoords?.lng ?? ""}-${locationGpsFailed}`}
         contentContainerStyle={styles.content}
+        refreshControl={refreshControl}
         ListHeaderComponent={ListHeader}
         renderItem={renderItem}
         ListEmptyComponent={

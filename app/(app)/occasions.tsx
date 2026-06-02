@@ -1,7 +1,7 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   FlatList,
   ImageBackground,
@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { CartNavIcon } from '@/lib/components/common/CartNavIcon';
 import { RemoteImage } from '@/lib/components/common/RemoteImage';
 import { pushCollection } from '@/lib/navigation/collectionNavigation';
@@ -37,8 +38,8 @@ function formatInrPrice(value: number): string {
 }
 
 export default function OccasionsScreen() {
-  const [occasionCollections, setOccasionCollections] = React.useState<Array<{ id: string; title: string; image: string | null; collectionSlug: string }>>([]);
-  const [trendingInWedding, setTrendingInWedding] = React.useState<
+  const [occasionCollections, setOccasionCollections] = useState<Array<{ id: string; title: string; image: string | null; collectionSlug: string }>>([]);
+  const [trendingInWedding, setTrendingInWedding] = useState<
     Array<{
       id: string;
       title: string;
@@ -48,69 +49,74 @@ export default function OccasionsScreen() {
       image: string | null;
     }>
   >([]);
-  const [loadingOccasions, setLoadingOccasions] = React.useState(true);
-  const [loadingTrending, setLoadingTrending] = React.useState(true);
+  const [loadingOccasions, setLoadingOccasions] = useState(true);
+  const [loadingTrending, setLoadingTrending] = useState(true);
+
+  const loadOccasionsData = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent ?? false;
+    if (!silent) {
+      setLoadingOccasions(true);
+      setLoadingTrending(true);
+    }
+    try {
+      const [occasionsResult, weddingProductsResult] = await Promise.allSettled([
+        fetchOccasionsUi(),
+        fetchProductsForCollection('wedding', { force: true }),
+      ]);
+
+      if (occasionsResult.status === 'fulfilled') {
+        const occasions = occasionsResult.value;
+        setOccasionCollections(
+          occasions.map((item) => ({
+            id: item.id,
+            title: item.title,
+            image: item.image,
+            collectionSlug: item.collectionSlug,
+          })),
+        );
+      } else {
+        console.error('Failed to load occasions', occasionsResult.reason);
+        setOccasionCollections([]);
+      }
+
+      if (weddingProductsResult.status === 'fulfilled') {
+        const weddingProducts = weddingProductsResult.value;
+        setTrendingInWedding(
+          weddingProducts.slice(0, 4).map((item) => ({
+            id: item.id,
+            title: item.name,
+            price: formatInrPrice(item.price),
+            subtitle: item.category,
+            boutiqueLine:
+              typeof item.boutiqueName === 'string' && item.boutiqueName.trim()
+                ? formatBoutiqueMeta({
+                    name: item.boutiqueName,
+                    rating: item.boutiqueRating,
+                    verified: item.boutiqueVerified,
+                  })
+                : null,
+            image: item.imageUri ?? null,
+          })),
+        );
+      } else {
+        console.error('Failed to load wedding collection products', weddingProductsResult.reason);
+        setTrendingInWedding([]);
+      }
+    } finally {
+      if (!silent) {
+        setLoadingOccasions(false);
+        setLoadingTrending(false);
+      }
+    }
+  }, []);
 
   React.useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const [occasionsResult, weddingProductsResult] = await Promise.allSettled([
-          fetchOccasionsUi(),
-          fetchProductsForCollection('wedding', { force: true }),
-        ]);
+    void loadOccasionsData();
+  }, [loadOccasionsData]);
 
-        if (!mounted) return;
-
-        if (occasionsResult.status === 'fulfilled') {
-          const occasions = occasionsResult.value;
-          setOccasionCollections(
-            occasions.map((item) => ({
-              id: item.id,
-              title: item.title,
-              image: item.image,
-              collectionSlug: item.collectionSlug,
-            })),
-          );
-        } else {
-          console.error('Failed to load occasions', occasionsResult.reason);
-          setOccasionCollections([]);
-        }
-
-        if (weddingProductsResult.status === 'fulfilled') {
-          const weddingProducts = weddingProductsResult.value;
-          setTrendingInWedding(
-            weddingProducts.slice(0, 4).map((item) => ({
-              id: item.id,
-              title: item.name,
-              price: formatInrPrice(item.price),
-              subtitle: item.category,
-              boutiqueLine:
-                typeof item.boutiqueName === 'string' && item.boutiqueName.trim()
-                  ? formatBoutiqueMeta({
-                      name: item.boutiqueName,
-                      rating: item.boutiqueRating,
-                      verified: item.boutiqueVerified,
-                    })
-                  : null,
-              image: item.imageUri ?? null,
-            })),
-          );
-        } else {
-          console.error('Failed to load wedding collection products', weddingProductsResult.reason);
-          setTrendingInWedding([]);
-        }
-      } finally {
-        if (mounted) {
-          setLoadingOccasions(false);
-          setLoadingTrending(false);
-        }
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, []);
+  const { refreshControl } = usePullToRefresh(
+    useCallback(() => loadOccasionsData({ silent: true }), [loadOccasionsData]),
+  );
   const router = useRouter();
   const cartCount = useCartStore((s) =>
     s.items.reduce((acc, line) => acc + line.qty, 0),
@@ -261,6 +267,7 @@ export default function OccasionsScreen() {
           style={styles.list}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          refreshControl={refreshControl}
         />
       </View>
       <BottomTabBar />

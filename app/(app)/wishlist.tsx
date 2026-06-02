@@ -1,6 +1,7 @@
-import WishlistScreen from '@/screens/WishlistScreen';
-
 import { ProtectedRouteGate } from '@/lib/components/common/ProtectedRouteGate';
+import { lazyScreen } from '@/lib/utils/lazyScreen';
+
+const WishlistScreen = lazyScreen(() => import('@/screens/WishlistScreen'));
 
 export default function WishlistRoute() {
   return (

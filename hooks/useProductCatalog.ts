@@ -189,10 +189,11 @@ export type ProductSearchState = SearchState & {
   /** True while the debounced query has not caught up to the latest input. */
   isDebouncing: boolean;
   products: CatalogProduct[];
+  refetch: () => Promise<void>;
 };
 
 export function useProductSearch(query: string): ProductSearchState {
-  const { products, loading: catalogLoading, error } = useProductCatalog();
+  const { products, loading: catalogLoading, error, refetch } = useProductCatalog();
   const [debounced, setDebounced] = useState(query);
 
   useEffect(() => {
@@ -218,5 +219,6 @@ export function useProductSearch(query: string): ProductSearchState {
     debouncedQuery: debounced,
     isDebouncing,
     products,
+    refetch,
   };
 }

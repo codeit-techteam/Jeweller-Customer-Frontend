@@ -1,6 +1,7 @@
-import NotificationsScreen from '@/screens/NotificationsScreen';
-
 import { ProtectedRouteGate } from '@/lib/components/common/ProtectedRouteGate';
+import { lazyScreen } from '@/lib/utils/lazyScreen';
+
+const NotificationsScreen = lazyScreen(() => import('@/screens/NotificationsScreen'));
 
 export default function NotificationsRoute() {
   return (

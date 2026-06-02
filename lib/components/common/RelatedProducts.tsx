@@ -12,6 +12,7 @@ import {
 import { RemoteImage } from '@/lib/components/common/RemoteImage';
 import type { ProductDetail } from '@/lib/services/catalogApi';
 import { formatBoutiqueMeta } from '@/lib/utils/formatBoutiqueMeta';
+import { FLAT_LIST_HORIZONTAL_PROPS } from '@/lib/constants/flatListPerformance';
 import { fontSizes, radius, spacing } from '@/src/constants/theme';
 
 type Props = {
@@ -88,6 +89,7 @@ export function RelatedProducts({ title = 'Similar Pieces', items, onSelect, onV
       </View>
 
       <FlatList
+        {...FLAT_LIST_HORIZONTAL_PROPS}
         horizontal
         data={items}
         keyExtractor={(item) => item.id}

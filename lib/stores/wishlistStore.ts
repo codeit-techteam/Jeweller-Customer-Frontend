@@ -31,8 +31,11 @@ type WishlistState = {
   loading: boolean;
   initialized: boolean;
   pendingById: Record<string, boolean>;
-  initializeForUser: (userId: string | null) => Promise<void>;
-  refresh: () => Promise<void>;
+  initializeForUser: (
+    userId: string | null,
+    opts?: { force?: boolean; silent?: boolean },
+  ) => Promise<void>;
+  refresh: (opts?: { silent?: boolean }) => Promise<void>;
   toggle: (id: string, snapshot?: WishlistSnapshot, options?: { skipToast?: boolean }) => Promise<void>;
   remove: (id: string) => Promise<void>;
   /** Remove from wishlist only (no toggle / guest login flow). Used after move-to-cart. */
@@ -58,7 +61,7 @@ export const useWishlistStore = create<WishlistState>()((set, get) => ({
   initialized: false,
   pendingById: {},
 
-  initializeForUser: async (userId) => {
+  initializeForUser: async (userId, opts) => {
     console.log("WISHLIST USER:", userId);
     if (!userId) {
       set({
@@ -74,9 +77,23 @@ export const useWishlistStore = create<WishlistState>()((set, get) => ({
     }
 
     const current = get();
-    if (current.userId === userId && current.initialized) return;
+    const force = opts?.force ?? false;
+    const silent = opts?.silent ?? false;
+    if (current.userId === userId && current.initialized && !force) return;
 
-    set({ userId, loading: true, initialized: false, ids: [], items: {}, count: 0, pendingById: {} });
+    if (silent) {
+      set({ userId, loading: false });
+    } else {
+      set({
+        userId,
+        loading: true,
+        initialized: false,
+        ids: [],
+        items: {},
+        count: 0,
+        pendingById: {},
+      });
+    }
     try {
       const [list, countPayload] = await Promise.all([
         getWishlist(userId),
@@ -120,11 +137,14 @@ export const useWishlistStore = create<WishlistState>()((set, get) => ({
     }
   },
 
-  refresh: async () => {
+  refresh: async (opts) => {
     const userId = get().userId;
     if (!userId) return;
-    set({ initialized: false });
-    await get().initializeForUser(userId);
+    const silent = opts?.silent ?? false;
+    if (!silent) {
+      set({ initialized: false });
+    }
+    await get().initializeForUser(userId, { force: true, silent });
   },
 
   toggle: async (id, snapshot, options) => {

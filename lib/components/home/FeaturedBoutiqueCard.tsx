@@ -92,14 +92,9 @@ export function FeaturedBoutiqueCard({
         </View>
 
         <View style={styles.content}>
-          <View style={styles.nameRow}>
-            <Text style={styles.name} numberOfLines={1}>
-              {item.name}
-            </Text>
-            {showVerifiedOverlay(item) ? (
-              <MaterialIcons name="verified" size={18} color="#2563EB" style={styles.nameVerifiedIcon} />
-            ) : null}
-          </View>
+          <Text style={styles.name} numberOfLines={1}>
+            {item.name}
+          </Text>
 
           <View style={styles.ratingRow}>
             <MaterialIcons name="star" size={15} color={STAR_GOLD} style={styles.starIcon} />
@@ -205,20 +200,12 @@ const styles = StyleSheet.create({
   content: {
     paddingTop: 2,
   },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 10,
-  },
   name: {
-    flex: 1,
-    minWidth: 0,
+    marginTop: 10,
     fontSize: 18,
     fontWeight: '700',
     color: TITLE,
   },
-  nameVerifiedIcon: { marginTop: 1 },
   ratingRow: {
     flexDirection: 'row',
     alignItems: 'center',

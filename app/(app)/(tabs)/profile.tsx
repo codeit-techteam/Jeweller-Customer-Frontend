@@ -20,6 +20,7 @@ import { ProfileMenuItem } from '@/lib/components/common/ProfileMenuItem';
 import { BottomTabBar } from '@/src/components/navigation/BottomTabBar';
 import { fontSizes, spacing } from '@/src/constants/theme';
 import { useAuth } from '@/context/AuthContext';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { useAuthGuard } from '@/src/hooks/useAuthGuard';
 import { ProfileSkeletonLoader } from '@/components/loaders';
 import { useNotificationsStore } from '@/lib/stores/notificationsStore';
@@ -54,8 +55,9 @@ function LockedProfileCard({ icon, title, subtitle, onPress }: LockedCardProps) 
 
 export default function ProfileTabScreen() {
   const router = useRouter();
-  const { user, loading, logout, uploadProfileImage, isGuest, isAuthenticated } = useAuth();
+  const { user, loading, logout, uploadProfileImage, isGuest, isAuthenticated, hydrate } = useAuth();
   const unreadNotificationsCount = useNotificationsStore((s) => s.unreadCount);
+  const refreshNotifications = useNotificationsStore((s) => s.refresh);
   const requireAuth = useAuthGuard();
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -136,6 +138,15 @@ export default function ProfileTabScreen() {
     [requireAuth, router],
   );
 
+  const { refreshControl } = usePullToRefresh(
+    useCallback(async () => {
+      await Promise.all([
+        hydrate(),
+        isAuthenticated ? refreshNotifications() : Promise.resolve(),
+      ]);
+    }, [hydrate, isAuthenticated, refreshNotifications]),
+  );
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.body}>
@@ -152,6 +163,7 @@ export default function ProfileTabScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
+          refreshControl={refreshControl}
         >
         <View style={styles.avatarBlock}>
           <View style={styles.avatarOuter}>
@@ -252,11 +264,6 @@ export default function ProfileTabScreen() {
                 icon="location-on"
                 title="Saved Addresses"
                 onPress={() => router.push('/(app)/address')}
-              />
-              <ProfileMenuItem
-                icon="receipt-long"
-                title="Order History"
-                onPress={() => router.push('/(app)/orders')}
               />
               <ProfileMenuItem
                 icon="shield"

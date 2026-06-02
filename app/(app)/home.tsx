@@ -25,6 +25,7 @@ import {
 } from "@/components/loaders";
 import { ShimmerBlock } from "@/components/loaders/ShimmerBlock";
 import { useNetworkReachable } from "@/hooks/useNetworkReachable";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { useUserLocation } from "@/hooks/useUserLocation";
 import { useAuthGuard } from "@/src/hooks/useAuthGuard";
 import {
@@ -41,7 +42,13 @@ import { SEARCH_ROTATING_PLACEHOLDERS } from "@/lib/constants/searchRotatingPlac
 import { CartNavIcon } from "@/lib/components/common/CartNavIcon";
 import { WishlistNavIcon } from "@/lib/components/common/WishlistNavIcon";
 import { FeaturedBoutiqueCard } from "@/lib/components/home/FeaturedBoutiqueCard";
-import { FeaturedSectionRail } from "@/lib/components/home/FeaturedSectionRail";
+import { lazyNamedScreen } from "@/lib/utils/lazyScreen";
+import { FLAT_LIST_HORIZONTAL_PROPS, FLAT_LIST_WINDOWED_PROPS } from "@/lib/constants/flatListPerformance";
+
+const FeaturedSectionRail = lazyNamedScreen(
+  () => import("@/lib/components/home/FeaturedSectionRail"),
+  "FeaturedSectionRail",
+);
 import { pushCollection } from "@/lib/navigation/collectionNavigation";
 import { pushProductDetails } from "@/lib/navigation/productNavigation";
 import {
@@ -250,6 +257,10 @@ function HomeContent() {
     }, [loadHomeData]),
   );
 
+  const { refreshControl } = usePullToRefresh(
+    useCallback(() => loadHomeData({ silent: true }), [loadHomeData]),
+  );
+
   const renderOccasionItem = useCallback(
     ({ item }: { item: (typeof occasionData)[number] }) => {
       if (!item?.image || !item.id) {
@@ -430,7 +441,14 @@ function HomeContent() {
   );
 
   return (
-    <View>
+    <ScrollView
+      style={styles.scroll}
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={styles.screenContent}
+      nestedScrollEnabled
+      refreshControl={refreshControl}
+    >
+      <View>
       <View style={styles.topBar}>
         <Pressable onPress={() => router.push("/menu")} style={styles.menuBtn}>
           <Text style={styles.menuIcon}>☰</Text>
@@ -577,6 +595,7 @@ function HomeContent() {
         </View>
       ) : (
         <FlatList
+          {...FLAT_LIST_WINDOWED_PROPS}
           data={homeCategoryPreview}
           keyExtractor={(item) => item}
           numColumns={4}
@@ -669,6 +688,7 @@ function HomeContent() {
           </View>
         ) : (
           <FlatList
+            {...FLAT_LIST_HORIZONTAL_PROPS}
             data={occasionData}
             horizontal
             nestedScrollEnabled
@@ -691,6 +711,7 @@ function HomeContent() {
           <BoutiqueSkeletonLoader count={3} />
         ) : (
           <FlatList
+            {...FLAT_LIST_HORIZONTAL_PROPS}
             data={boutiquesData}
             horizontal
             nestedScrollEnabled
@@ -708,6 +729,7 @@ function HomeContent() {
         <ProductSkeletonLoader count={4} />
       ) : (
         <FlatList
+          {...FLAT_LIST_WINDOWED_PROPS}
           data={homeTrendingPreview}
           keyExtractor={(item) => item.id}
           numColumns={2}
@@ -794,6 +816,7 @@ function HomeContent() {
         </View>
       </View>
     </View>
+    </ScrollView>
   );
 }
 
@@ -801,14 +824,7 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
       <View style={styles.inner}>
-        <ScrollView
-          style={styles.scroll}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.screenContent}
-          nestedScrollEnabled
-        >
-          <HomeContent />
-        </ScrollView>
+        <HomeContent />
       </View>
       <BottomTabBar />
     </SafeAreaView>

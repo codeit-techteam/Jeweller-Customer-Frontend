@@ -5,6 +5,7 @@ import React, { useCallback, useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { CartNavIcon } from "@/lib/components/common/CartNavIcon";
 import {
     ListingProductCard,
@@ -17,6 +18,7 @@ import { snapshotFromListingFields } from "@/lib/services/mock/wishlist";
 import { useCartStore } from "@/lib/stores/cartStore";
 import { useWishlistIds, useWishlistStore } from "@/lib/stores/wishlistStore";
 import { PLACEHOLDER_IMAGE_URI } from "@/lib/services/mock/imageUrls";
+import { FLAT_LIST_WINDOWED_PROPS } from "@/lib/constants/flatListPerformance";
 import { BottomTabBar } from "@/src/components/navigation/BottomTabBar";
 import { fontSizes, radius, spacing } from "@/src/constants/theme";
 type TrendingProduct = Awaited<
@@ -80,6 +82,10 @@ export default function TrendingScreen() {
     }, [loadTrending]),
   );
 
+  const { refreshControl } = usePullToRefresh(
+    useCallback(() => loadTrending({ silent: true }), [loadTrending]),
+  );
+
   const openProduct = useCallback(
     (id: string) => {
       pushProductDetails(router, id);
@@ -124,11 +130,13 @@ export default function TrendingScreen() {
         </View>
 
         <FlatList
+          {...FLAT_LIST_WINDOWED_PROPS}
           style={styles.listFlex}
           data={listingData}
           keyExtractor={(item) => item.id}
           numColumns={2}
           showsVerticalScrollIndicator={false}
+          refreshControl={refreshControl}
           columnWrapperStyle={styles.row}
           contentContainerStyle={styles.listContent}
           ListHeaderComponent={

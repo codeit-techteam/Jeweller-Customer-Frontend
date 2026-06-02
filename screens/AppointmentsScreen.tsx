@@ -1,8 +1,7 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  Animated,
   FlatList,
   Linking,
   Pressable,
@@ -11,12 +10,16 @@ import {
   Text,
   View,
 } from 'react-native';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
 import { ShimmerBlock } from '@/components/loaders/ShimmerBlock';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
+import { AppointmentSegmentedControl } from '@/lib/components/appointments/AppointmentSegmentedControl';
+import { luxury } from '@/lib/components/appointments/appointmentTheme';
 import { AppointmentCard } from '@/lib/components/common/AppointmentCard';
 import type { Appointment } from '@/lib/services/mock/appointments';
 import { showPopup } from '@/lib/stores/popupStore';
+import { appointmentMatchesTab, type AppointmentTab } from '@/lib/utils/appointments';
 import {
   ApiError,
   getAppointmentsForUser,
@@ -26,8 +29,35 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import { fontSizes, radius, spacing } from '@/src/constants/theme';
 
-const OLIVE = '#6b5c22';
-const BG = '#f5f5f7';
+const TABS: { key: AppointmentTab; label: string }[] = [
+  { key: 'upcoming', label: 'Upcoming' },
+  { key: 'past', label: 'Past' },
+  { key: 'cancelled', label: 'Cancelled' },
+];
+
+const EMPTY_COPY: Record<
+  AppointmentTab,
+  { title: string; subtitle: string; cta?: string; route?: '/(app)/boutiques' }
+> = {
+  upcoming: {
+    title: 'No Upcoming Appointments',
+    subtitle: 'Book a boutique visit for personalized jewellery consultations with master artisans.',
+    cta: 'Explore Boutiques',
+    route: '/(app)/boutiques',
+  },
+  past: {
+    title: 'No Past Appointments',
+    subtitle: 'Your completed visits and private viewings will appear here.',
+    cta: 'Explore Boutiques',
+    route: '/(app)/boutiques',
+  },
+  cancelled: {
+    title: 'No Cancelled Appointments',
+    subtitle: 'Appointments you cancel will be listed here for your records.',
+    cta: 'Explore Boutiques',
+    route: '/(app)/boutiques',
+  },
+};
 
 function mapRowToAppointment(row: AppointmentApiRow): Appointment {
   return {
@@ -78,15 +108,46 @@ function telHref(phone: string | undefined): string | null {
 function AppointmentSkeletonCard() {
   return (
     <View style={skStyles.card}>
-      <ShimmerBlock height={140} borderRadius={0} />
+      <ShimmerBlock height={168} borderRadius={0} />
       <View style={skStyles.pad}>
-        <ShimmerBlock height={18} width="55%" borderRadius={6} />
-        <ShimmerBlock height={14} width="78%" borderRadius={6} style={{ marginTop: 10 }} />
-        <ShimmerBlock height={12} width="100%" borderRadius={6} style={{ marginTop: 8 }} />
-        <ShimmerBlock height={40} borderRadius={10} style={{ marginTop: 14 }} />
-        <ShimmerBlock height={36} borderRadius={10} style={{ marginTop: 10 }} />
+        <ShimmerBlock height={22} width="60%" borderRadius={8} />
+        <ShimmerBlock height={14} width="90%" borderRadius={6} style={{ marginTop: 12 }} />
+        <View style={skStyles.btnRow}>
+          <ShimmerBlock height={44} borderRadius={14} style={{ flex: 1 }} />
+          <ShimmerBlock height={44} borderRadius={14} style={{ flex: 1 }} />
+        </View>
       </View>
     </View>
+  );
+}
+
+function TabEmptyState({
+  tab,
+  onCta,
+}: {
+  tab: AppointmentTab;
+  onCta: () => void;
+}) {
+  const copy = EMPTY_COPY[tab];
+  return (
+    <Animated.View entering={FadeIn.duration(320)} exiting={FadeOut.duration(200)} style={styles.emptyLuxury}>
+      <View style={styles.emptyIllustration}>
+        <View style={styles.emptyIconInner}>
+          <MaterialIcons name="event" size={36} color={luxury.goldDark} />
+        </View>
+        <View style={styles.emptyRing} />
+      </View>
+      <Text style={styles.emptyLuxuryTitle}>{copy.title}</Text>
+      <Text style={styles.emptyLuxurySub}>{copy.subtitle}</Text>
+      {copy.cta ? (
+        <Pressable
+          style={({ pressed }) => [styles.exploreBtn, pressed && styles.btnPressed]}
+          onPress={onCta}
+        >
+          <Text style={styles.exploreBtnText}>{copy.cta}</Text>
+        </Pressable>
+      ) : null}
+    </Animated.View>
   );
 }
 
@@ -98,26 +159,33 @@ export default function AppointmentsScreen() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<AppointmentTab>('upcoming');
+  const listKey = useRef(0);
 
-  const listOpacity = useRef(new Animated.Value(1)).current;
-
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent ?? false;
     if (!userId) {
       setAppointments([]);
       setLoading(false);
       setError(null);
       return;
     }
-    setLoading(true);
+    if (!silent) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const rows = await getAppointmentsForUser(userId);
       setAppointments(rows.map(mapRowToAppointment));
     } catch (err) {
       setError(userFacingAppointmentError(err));
-      setAppointments([]);
+      if (!silent) {
+        setAppointments([]);
+      }
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   }, [userId]);
 
@@ -127,22 +195,30 @@ export default function AppointmentsScreen() {
     }, [load]),
   );
 
-  useEffect(() => {
-    if (loading) {
-      listOpacity.setValue(1);
-      return;
+  const { refreshControl } = usePullToRefresh(
+    useCallback(() => load({ silent: true }), [load]),
+    { enabled: Boolean(userId) },
+  );
+
+  const handleTabChange = useCallback((tab: AppointmentTab) => {
+    setActiveTab(tab);
+    listKey.current += 1;
+  }, []);
+
+  const filteredAppointments = useMemo(
+    () => appointments.filter((a) => appointmentMatchesTab(a, activeTab)),
+    [appointments, activeTab],
+  );
+
+  const tabCounts = useMemo(() => {
+    const counts: Record<AppointmentTab, number> = { upcoming: 0, past: 0, cancelled: 0 };
+    for (const a of appointments) {
+      for (const tab of TABS) {
+        if (appointmentMatchesTab(a, tab.key)) counts[tab.key] += 1;
+      }
     }
-    if (appointments.length > 0) {
-      listOpacity.setValue(0);
-      Animated.timing(listOpacity, {
-        toValue: 1,
-        duration: 320,
-        useNativeDriver: true,
-      }).start();
-    } else {
-      listOpacity.setValue(1);
-    }
-  }, [loading, appointments.length, listOpacity]);
+    return counts;
+  }, [appointments]);
 
   const openDetails = useCallback(
     (id: string) => {
@@ -162,6 +238,24 @@ export default function AppointmentsScreen() {
         return;
       }
       router.push({ pathname: '/(app)/boutique-profile', params: { id: a.boutiqueId } });
+    },
+    [router],
+  );
+
+  const bookAtBoutique = useCallback(
+    (a: Appointment) => {
+      if (!a.boutiqueId) {
+        showPopup({
+          type: 'info',
+          title: 'Book visit',
+          message: 'This boutique is no longer available for booking.',
+        });
+        return;
+      }
+      router.push({
+        pathname: '/(app)/book-appointment',
+        params: { boutiqueId: a.boutiqueId },
+      });
     },
     [router],
   );
@@ -216,84 +310,15 @@ export default function AppointmentsScreen() {
         <Text style={styles.heroSubtitle}>
           Manage your private viewings and personal consultations with our master jewelers.
         </Text>
+        <AppointmentSegmentedControl
+          tabs={TABS}
+          activeTab={activeTab}
+          counts={tabCounts}
+          onChange={handleTabChange}
+        />
       </View>
     ),
-    [],
-  );
-
-  const ListFooter = useMemo(
-    () => (
-      <View style={styles.footerSections}>
-        <View style={styles.concierge}>
-          <Text style={styles.conciergeTitle}>Need expert advice before your visit?</Text>
-          <Text style={styles.conciergeBody}>
-            Connect with our lead concierge to discuss styles, custom settings, or budget expectations ahead of
-            your appointment.
-          </Text>
-          <Pressable
-            style={({ pressed }) => [styles.conciergeBtn, pressed && styles.btnPressed]}
-            onPress={() => {
-              showPopup({
-                type: 'info',
-                title: 'Concierge',
-                message: 'Messaging would open here.',
-              });
-            }}
-          >
-            <Text style={styles.conciergeBtnText}>Message Concierge</Text>
-          </Pressable>
-        </View>
-
-        <View style={styles.prefsWrap}>
-          <Text style={styles.prefsLabel}>YOUR PREFERENCES</Text>
-          <View style={styles.prefsInner}>
-            {['Conflict-Free Only', 'Platinum Preference', 'Bespoke Design Interest'].map((label) => (
-              <View key={label} style={styles.prefRow}>
-                <Text style={styles.prefText}>{label}</Text>
-                <View style={styles.prefCheck}>
-                  <MaterialIcons name="check" size={14} color="#fff" />
-                </View>
-              </View>
-            ))}
-          </View>
-          <Pressable
-            onPress={() => {
-              showPopup({
-                type: 'info',
-                title: 'Design profile',
-                message: 'Update flow would open here.',
-              });
-            }}
-          >
-            <Text style={styles.updateProfile}>UPDATE DESIGN PROFILE</Text>
-          </Pressable>
-        </View>
-        <View style={styles.listBottomPad} />
-      </View>
-    ),
-    [],
-  );
-
-  const emptyLuxury = useMemo(
-    () => (
-      <View style={styles.emptyLuxury}>
-        <View style={styles.emptyIconCircle}>
-          <MaterialIcons name="event-available" size={36} color="#a68b2d" />
-        </View>
-        <Text style={styles.emptyLuxuryTitle}>No appointments yet</Text>
-        <Text style={styles.emptyLuxurySub}>
-          Book a private jewellery consultation with verified boutiques near you. Your visits will appear here with
-          reminders and concierge support.
-        </Text>
-        <Pressable
-          style={({ pressed }) => [styles.exploreBtn, pressed && styles.btnPressed]}
-          onPress={() => router.push('/(app)/boutiques')}
-        >
-          <Text style={styles.exploreBtnText}>Explore Boutiques</Text>
-        </Pressable>
-      </View>
-    ),
-    [router],
+    [activeTab, handleTabChange, tabCounts],
   );
 
   const errorBlock = useMemo(
@@ -319,7 +344,6 @@ export default function AppointmentsScreen() {
       <View style={styles.skeletonWrap}>
         <AppointmentSkeletonCard />
         <AppointmentSkeletonCard />
-        <AppointmentSkeletonCard />
       </View>
     ),
     [],
@@ -334,7 +358,7 @@ export default function AppointmentsScreen() {
           onPress={() => router.back()}
           style={styles.backBtn}
         >
-          <MaterialIcons name="arrow-back" size={22} color="#0f172a" />
+          <MaterialIcons name="arrow-back" size={22} color={luxury.textPrimary} />
         </Pressable>
         <Text style={styles.navTitle}>My Appointments</Text>
         <View style={styles.backSlot} />
@@ -345,45 +369,54 @@ export default function AppointmentsScreen() {
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          refreshControl={refreshControl}
         >
           {ListHeader}
           {loadingBlock}
         </ScrollView>
       ) : (
-        <Animated.View style={[styles.flexOne, { opacity: listOpacity }]}>
-          <FlatList
-            data={appointments}
-            keyExtractor={(item) => item.id}
-            extraData={[appointments, loading]}
-            ListHeaderComponent={ListHeader}
-            ListFooterComponent={appointments.length > 0 ? ListFooter : null}
-            ListEmptyComponent={
-              <View>
-                {error ? errorBlock : !userId ? (
-                  <View style={styles.emptyWrap}>
-                    <MaterialIcons name="lock-outline" size={40} color="#cbd5e1" />
-                    <Text style={styles.emptyTitle}>Sign in to continue</Text>
-                    <Text style={styles.emptySub}>Your appointments sync to your account when you are signed in.</Text>
-                  </View>
-                ) : (
-                  emptyLuxury
-                )}
-                {!error && userId ? ListFooter : null}
-              </View>
-            }
-            contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator={false}
-            renderItem={({ item }) => (
-              <AppointmentCard
-                item={item}
-                onPress={() => openDetails(item.id)}
-                onCancel={() => onCancel(item)}
-                onCallBoutique={() => onCall(item)}
-                onViewBoutique={() => openBoutique(item)}
-              />
-            )}
-          />
-        </Animated.View>
+        <FlatList
+          key={`${activeTab}-${listKey.current}`}
+          data={filteredAppointments}
+          keyExtractor={(item) => item.id}
+          extraData={[filteredAppointments, activeTab, loading]}
+          refreshControl={refreshControl}
+          ListHeaderComponent={ListHeader}
+          ListEmptyComponent={
+            <View>
+              {error ? (
+                errorBlock
+              ) : !userId ? (
+                <View style={styles.emptyWrap}>
+                  <MaterialIcons name="lock-outline" size={40} color="#cbd5e1" />
+                  <Text style={styles.emptyTitle}>Sign in to continue</Text>
+                  <Text style={styles.emptySub}>
+                    Your appointments sync to your account when you are signed in.
+                  </Text>
+                </View>
+              ) : (
+                <TabEmptyState
+                  tab={activeTab}
+                  onCta={() => router.push('/(app)/boutiques')}
+                />
+              )}
+            </View>
+          }
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          renderItem={({ item, index }) => (
+            <AppointmentCard
+              item={item}
+              index={index}
+              onPress={() => openDetails(item.id)}
+              onCancel={() => onCancel(item)}
+              onCallBoutique={() => onCall(item)}
+              onViewBoutique={() => openBoutique(item)}
+              onReschedule={() => bookAtBoutique(item)}
+              onBookAgain={() => bookAtBoutique(item)}
+            />
+          )}
+        />
       )}
     </SafeAreaView>
   );
@@ -392,27 +425,24 @@ export default function AppointmentsScreen() {
 const skStyles = StyleSheet.create({
   card: {
     backgroundColor: '#fff',
-    borderRadius: 16,
-    marginBottom: spacing.md,
+    borderRadius: 24,
+    marginBottom: spacing.lg,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(26, 24, 20, 0.06)',
   },
-  pad: { padding: spacing.md },
+  pad: { padding: spacing.lg },
+  btnRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
 });
 
 const styles = StyleSheet.create({
-  flexOne: { flex: 1 },
-  safe: { flex: 1, backgroundColor: BG },
+  safe: { flex: 1, backgroundColor: luxury.screenBg },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: BG,
+    backgroundColor: luxury.screenBg,
   },
   backBtn: { width: 40, paddingVertical: 4 },
   backSlot: { width: 40 },
@@ -421,27 +451,31 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: fontSizes.md,
     fontWeight: '600',
-    color: '#0f172a',
+    color: luxury.textPrimary,
   },
   listContent: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing['2xl'],
+    flexGrow: 1,
   },
   headerBlock: {
     paddingTop: spacing.sm,
     marginBottom: spacing.md,
+    width: '100%',
+    alignSelf: 'stretch',
   },
   heroTitle: {
     fontSize: fontSizes['3xl'],
     fontWeight: '800',
-    color: '#0f172a',
+    color: luxury.textPrimary,
     marginBottom: spacing.sm,
+    letterSpacing: -0.6,
   },
   heroSubtitle: {
     fontSize: fontSizes.sm,
-    color: '#64748b',
-    lineHeight: 20,
-    marginBottom: spacing.lg,
+    color: luxury.textSecondary,
+    lineHeight: 21,
+    marginBottom: spacing.md,
   },
   skeletonWrap: { paddingBottom: spacing.md },
   emptyWrap: {
@@ -458,37 +492,73 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(15, 23, 42, 0.06)',
+    borderColor: 'rgba(26, 24, 20, 0.06)',
     marginBottom: spacing.sm,
   },
   emptyLuxury: {
     alignItems: 'center',
-    paddingVertical: spacing.xl,
+    paddingVertical: spacing['2xl'],
     paddingHorizontal: spacing.md,
   },
+  emptyIllustration: {
+    width: 88,
+    height: 88,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
+  emptyRing: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 44,
+    borderWidth: 2,
+    borderColor: luxury.goldFill,
+    opacity: 0.5,
+  },
+  emptyIconInner: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1,
+  },
   emptyLuxuryTitle: {
-    marginTop: spacing.md,
     fontSize: fontSizes.xl,
     fontWeight: '800',
-    color: '#0f172a',
+    color: luxury.textPrimary,
     letterSpacing: -0.3,
+    textAlign: 'center',
   },
   emptyLuxurySub: {
     marginTop: spacing.sm,
     fontSize: fontSizes.sm,
-    color: '#64748b',
+    color: luxury.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
-    maxWidth: 320,
+    maxWidth: 300,
   },
   exploreBtn: {
     marginTop: spacing.xl,
     paddingHorizontal: spacing['2xl'],
     paddingVertical: spacing.md,
-    backgroundColor: '#0f172a',
+    backgroundColor: luxury.goldFill,
     borderRadius: radius.lg,
+    shadowColor: luxury.gold,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
   },
-  exploreBtnText: { color: '#fff', fontWeight: '800', fontSize: fontSizes.sm, letterSpacing: 0.4 },
+  exploreBtnText: {
+    color: luxury.goldDark,
+    fontWeight: '800',
+    fontSize: fontSizes.sm,
+    letterSpacing: 0.3,
+  },
+  btnPressed: { opacity: 0.9, transform: [{ scale: 0.98 }] },
   emptyTitle: {
     marginTop: spacing.md,
     fontSize: fontSizes.lg,
@@ -507,78 +577,8 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.sm,
-    backgroundColor: '#0f172a',
+    backgroundColor: luxury.textPrimary,
     borderRadius: radius.md,
   },
   retryBtnText: { color: '#fff', fontWeight: '700', fontSize: fontSizes.sm },
-  footerSections: { marginTop: spacing.sm },
-  concierge: {
-    backgroundColor: '#0f0f0f',
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    marginBottom: spacing.lg,
-  },
-  conciergeTitle: {
-    color: '#fff',
-    fontSize: fontSizes.lg,
-    fontWeight: '700',
-    lineHeight: 24,
-    marginBottom: spacing.sm,
-  },
-  conciergeBody: {
-    color: '#9ca3af',
-    fontSize: fontSizes.sm,
-    lineHeight: 20,
-    marginBottom: spacing.lg,
-  },
-  conciergeBtn: {
-    backgroundColor: OLIVE,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
-    alignItems: 'center',
-  },
-  conciergeBtnText: { color: '#fff', fontWeight: '700', fontSize: fontSizes.md },
-  btnPressed: { opacity: 0.9 },
-  prefsWrap: {
-    backgroundColor: '#e4e4e8',
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-  },
-  prefsLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1,
-    color: '#64748b',
-    marginBottom: spacing.sm,
-    marginLeft: spacing.xs,
-  },
-  prefsInner: { gap: spacing.sm },
-  prefRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#fff',
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
-  },
-  prefText: { fontSize: fontSizes.sm, fontWeight: '600', color: '#1e293b' },
-  prefCheck: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: '#a68b2d',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  updateProfile: {
-    textAlign: 'center',
-    marginTop: spacing.md,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-    color: OLIVE,
-  },
-  listBottomPad: { height: spacing.lg },
 });

@@ -4,6 +4,7 @@ import React, { useCallback, useMemo } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { useUserLocation } from '@/hooks/useUserLocation';
 import { haversineDistanceKm } from '@/lib/boutiques/boutiqueUi';
 import { pushProductDetails } from '@/lib/navigation/productNavigation';
@@ -56,6 +57,14 @@ export default function RecentlyViewedScreen() {
       if (!user?.id) return;
       void refresh(user.id);
     }, [refresh, user?.id]),
+  );
+
+  const { refreshControl } = usePullToRefresh(
+    useCallback(async () => {
+      if (!user?.id) return;
+      await refresh(user.id);
+    }, [refresh, user?.id]),
+    { enabled: Boolean(user?.id) },
   );
 
   const cardW = useMemo(() => recentlyViewedProductCardWidth(), []);
@@ -140,6 +149,7 @@ export default function RecentlyViewedScreen() {
         data={data}
         keyExtractor={(item) => item.id}
         extraData={[boutiquesWithDistance, userCoords]}
+        refreshControl={refreshControl}
         ListHeaderComponent={ListHeader}
         ListEmptyComponent={Empty}
         contentContainerStyle={styles.listContent}
