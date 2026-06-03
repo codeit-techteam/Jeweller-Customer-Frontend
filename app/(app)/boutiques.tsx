@@ -1,35 +1,44 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import * as Location from "expo-location";
 import { useFocusEffect } from "@react-navigation/native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
-    FlatList,
-    Modal,
-    Platform,
-    Pressable,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  FlatList,
+  LayoutAnimation,
+  Modal,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  UIManager,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import {
-    BOUTIQUE_SORT_OPTIONS,
-    BoutiqueSortDropdown,
-    type BoutiqueSortOptionId,
+  BOUTIQUE_SORT_OPTIONS,
+  BoutiqueSortDropdown,
+  type BoutiqueSortOptionId,
 } from "@/components/boutiques/BoutiqueSortDropdown";
+import { LocationHeader } from "@/components/location/LocationHeader";
+import { LocationPermissionSheet } from "@/components/location/LocationPermissionSheet";
 import { BoutiqueSkeletonLoader } from "@/components/loaders";
+import { useDiscoveryLocation } from "@/hooks/useDiscoveryLocation";
 import { useNetworkReachable } from "@/hooks/useNetworkReachable";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
-import { useUserLocation } from "@/hooks/useUserLocation";
 import type { BoutiqueUiListItem } from "@/lib/boutiques/boutiqueUi";
+import { extractCityToken } from "@/lib/location/locationSearch";
+import { sortBoutiquesForDiscovery } from "@/lib/location/boutiqueDiscoverySort";
+import { useDiscoveryLocationStore } from "@/lib/stores/discoveryLocationStore";
+import { useUserLocationStore } from "@/lib/stores/userLocationStore";
 import { BoutiqueStatusBadge } from "@/lib/components/common/BoutiqueStatusBadge";
 import { RemoteImage } from "@/lib/components/common/RemoteImage";
 import { fetchBoutiquesUi } from "@/lib/services/catalogApi";
 import {
-    boutiqueHasCoordinates,
-    formatBoutiqueDistanceLine,
+  boutiqueHasCoordinates,
+  formatBoutiqueDistanceLine,
 } from "@/lib/utils/formatBoutiqueDistance";
 import { ApiError } from "@/services/api";
 import { applyUserLocationToBoutiqueList } from "@/services/boutique.service";
@@ -44,6 +53,13 @@ const CHIP_BG = "#F2F2F2";
 const SCREEN_BG = "#F5F5F5";
 
 const DISTANCE_OPTIONS = ["1 km", "5 km", "10 km"] as const;
+
+if (
+  Platform.OS === "android" &&
+  UIManager.setLayoutAnimationEnabledExperimental
+) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 function parseSectionType(
   raw: string | string[] | undefined,
@@ -75,51 +91,12 @@ function matchesSearch(item: Boutique, q: string): boolean {
   return hay.includes(s);
 }
 
-function applySortOption(
-  list: Boutique[],
-  sort: BoutiqueSortOptionId | null,
-): Boutique[] {
-  const sorted = [...list];
-  /** `null` = nearest-first (default). */
-  const effective: BoutiqueSortOptionId = sort ?? "NEAREST";
-
-  switch (effective) {
-    case "NEAREST":
-      sorted.sort((a, b) => {
-        const da = a.distanceKm ?? Number.POSITIVE_INFINITY;
-        const db = b.distanceKm ?? Number.POSITIVE_INFINITY;
-        return da - db;
-      });
-      break;
-    case "HIGHEST_RATED":
-      sorted.sort(
-        (a, b) => b.rating - a.rating || b.reviewsCount - a.reviewsCount,
-      );
-      break;
-    case "OPEN_NOW":
-      sorted.sort((a, b) => {
-        if (a.openNow !== b.openNow) return a.openNow ? -1 : 1;
-        const da = a.distanceKm ?? Number.POSITIVE_INFINITY;
-        const db = b.distanceKm ?? Number.POSITIVE_INFINITY;
-        return da - db;
-      });
-      break;
-    case "MOST_REVIEWED":
-      sorted.sort(
-        (a, b) => b.reviewsCount - a.reviewsCount || b.rating - a.rating,
-      );
-      break;
-    default:
-      break;
-  }
-  return sorted;
-}
-
-function filterAndSort(
+function filterBoutiques(
   list: Boutique[],
   searchQuery: string,
   maxDistanceKm: number | null,
   sort: BoutiqueSortOptionId | null,
+  cityToken: string | null,
 ): Boutique[] {
   let out = list.filter((item) => matchesSearch(item, searchQuery));
   if (maxDistanceKm != null) {
@@ -127,7 +104,7 @@ function filterAndSort(
       (item) => item.distanceKm != null && item.distanceKm <= maxDistanceKm,
     );
   }
-  return applySortOption(out, sort);
+  return sortBoutiquesForDiscovery(out, sort, cityToken);
 }
 
 export default function BoutiquesScreen() {
@@ -144,24 +121,41 @@ export default function BoutiquesScreen() {
   const [filterVisible, setFilterVisible] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [permissionSheetVisible, setPermissionSheetVisible] = useState(false);
+  const [allowingLocation, setAllowingLocation] = useState(false);
+  const prevLocationLabel = useRef<string | null>(null);
+
   const reachable = useNetworkReachable();
   const {
-    coords: userCoords,
-    loading: locationLoading,
+    displayLabel,
+    effectiveCoords,
+    labelLoading,
     permission: locationPermission,
-    gpsFailed: locationGpsFailed,
-  } = useUserLocation(true);
+    gpsLoading: locationLoading,
+    useCurrentLocation,
+  } = useDiscoveryLocation();
+
+  const locationGpsFailed = useMemo(
+    () =>
+      locationPermission === Location.PermissionStatus.GRANTED &&
+      !locationLoading &&
+      effectiveCoords == null,
+    [locationPermission, locationLoading, effectiveCoords],
+  );
+
+  const cityToken = useMemo(
+    () => extractCityToken(displayLabel),
+    [displayLabel],
+  );
 
   const boutiquesData = useMemo(
-    () => applyUserLocationToBoutiqueList(rawBoutiques, userCoords),
-    [rawBoutiques, userCoords],
+    () => applyUserLocationToBoutiqueList(rawBoutiques, effectiveCoords),
+    [rawBoutiques, effectiveCoords],
   );
 
   const loadBoutiques = useCallback(async (opts?: { silent?: boolean }) => {
     const silent = opts?.silent ?? false;
-    if (!silent) {
-      setLoading(true);
-    }
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const rows = await fetchBoutiquesUi();
@@ -173,21 +167,49 @@ export default function BoutiquesScreen() {
         err instanceof ApiError ? err.message : "Unable to load boutiques";
       setError(message);
     } finally {
-      if (!silent) {
-        setLoading(false);
-      }
+      if (!silent) setLoading(false);
     }
   }, []);
 
   const { refreshControl } = usePullToRefresh(
-    useCallback(() => loadBoutiques({ silent: true }), [loadBoutiques]),
+    useCallback(async () => {
+      await useCurrentLocation();
+      await loadBoutiques({ silent: true });
+    }, [loadBoutiques, useCurrentLocation]),
   );
 
   useFocusEffect(
     useCallback(() => {
       void loadBoutiques();
+      void (async () => {
+        const seen = await useDiscoveryLocationStore.getState().hasSeenPrompt();
+        const perm = useUserLocationStore.getState().permission;
+        if (
+          !seen &&
+          perm !== Location.PermissionStatus.GRANTED &&
+          perm !== Location.PermissionStatus.DENIED
+        ) {
+          setPermissionSheetVisible(true);
+        }
+      })();
       return () => {};
     }, [loadBoutiques]),
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      if (
+        prevLocationLabel.current &&
+        prevLocationLabel.current !== displayLabel
+      ) {
+        LayoutAnimation.configureNext({
+          duration: 300,
+          update: { type: LayoutAnimation.Types.easeInEaseOut },
+        });
+        void loadBoutiques({ silent: true });
+      }
+      prevLocationLabel.current = displayLabel;
+    }, [displayLabel, loadBoutiques]),
   );
 
   const maxDistanceKm = useMemo(
@@ -197,14 +219,39 @@ export default function BoutiquesScreen() {
 
   const filteredBoutiques = useMemo(
     () =>
-      filterAndSort(boutiquesData, searchQuery, maxDistanceKm, selectedSort),
-    [boutiquesData, searchQuery, maxDistanceKm, selectedSort],
+      filterBoutiques(
+        boutiquesData,
+        searchQuery,
+        maxDistanceKm,
+        selectedSort,
+        cityToken,
+      ),
+    [boutiquesData, searchQuery, maxDistanceKm, selectedSort, cityToken],
   );
 
   const hasUserAppliedFilters = useMemo(
     () => Boolean(searchQuery.trim() || selectedDistance || selectedSort),
     [searchQuery, selectedDistance, selectedSort],
   );
+
+  const handleAllowLocation = useCallback(async () => {
+    setAllowingLocation(true);
+    try {
+      await useUserLocationStore.getState().init();
+      await useCurrentLocation();
+      await useDiscoveryLocationStore.getState().markPromptSeen();
+      setPermissionSheetVisible(false);
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      await loadBoutiques({ silent: true });
+    } finally {
+      setAllowingLocation(false);
+    }
+  }, [loadBoutiques, useCurrentLocation]);
+
+  const handleManualFromSheet = useCallback(async () => {
+    await useDiscoveryLocationStore.getState().markPromptSeen();
+    setPermissionSheetVisible(false);
+  }, []);
 
   const openProfile = useCallback(
     (item: Boutique) => {
@@ -225,6 +272,7 @@ export default function BoutiquesScreen() {
               <RemoteImage
                 uri={item.image ?? undefined}
                 fallbackTint="#c4b28f"
+                placeholder="boutique-cover"
                 style={styles.cardImage}
               />
               <View style={styles.cardStatusCorner} pointerEvents="none">
@@ -241,6 +289,8 @@ export default function BoutiquesScreen() {
                 <View style={styles.cardLogoRing} pointerEvents="none">
                   <RemoteImage
                     uri={item.logoImage}
+                    placeholder="boutique-logo"
+                    fallbackTint="#e8e4dc"
                     style={styles.cardLogoImage}
                   />
                 </View>
@@ -255,14 +305,18 @@ export default function BoutiquesScreen() {
               {item.reviewsCount > 0
                 ? `${item.reviewsCount} reviews`
                 : "No reviews yet"}
-              ) ·{" "}
-              {formatBoutiqueDistanceLine({
-                distanceKm: item.distanceKm,
-                locationLoading,
-                hasBoutiqueCoords: boutiqueHasCoordinates(item),
-                permission: locationPermission,
-                userLocationGpsFailed: locationGpsFailed,
-              })}{" "}
+              )
+              {(() => {
+                const distanceLine = formatBoutiqueDistanceLine({
+                  distanceKm: item.distanceKm,
+                  locationLoading,
+                  hasBoutiqueCoords: boutiqueHasCoordinates(item),
+                  permission: locationPermission,
+                  userLocationGpsFailed: locationGpsFailed,
+                });
+                return distanceLine ? ` · ${distanceLine}` : "";
+              })()}
+              {" · 📍 "}
               {item.location}
             </Text>
             {item.hoursLabel ? (
@@ -297,7 +351,10 @@ export default function BoutiquesScreen() {
   const ListHeader = useMemo(
     () => (
       <View style={styles.header}>
-        <Text style={styles.heading}>Boutiques</Text>
+        <LocationHeader
+          displayLabel={displayLabel}
+          labelLoading={labelLoading}
+        />
         {reachable === false ? (
           <Text style={styles.offlineHint}>
             No connection. Confirm Wi‑Fi and LAN API URL (EXPO_PUBLIC_API_URL).
@@ -325,21 +382,6 @@ export default function BoutiquesScreen() {
               : "Nearest locations"}
           </Text>
         ) : null}
-
-        <View style={styles.locationRow}>
-          <MaterialIcons
-            name="location-on"
-            size={20}
-            color="#8B7355"
-            style={styles.locationIcon}
-          />
-          <Text style={styles.locationText} numberOfLines={1}>
-            Karol Bagh, Delhi
-          </Text>
-          <Pressable hitSlop={8} onPress={() => {}} accessibilityRole="button">
-            <Text style={styles.changeLink}>CHANGE</Text>
-          </Pressable>
-        </View>
 
         <View style={[styles.searchContainer, SEARCH_SHADOW]}>
           <MaterialIcons name="search" size={20} color="#9CA3AF" />
@@ -387,8 +429,66 @@ export default function BoutiquesScreen() {
       selectedSort,
       filteredBoutiques.length,
       loadBoutiques,
+      displayLabel,
+      labelLoading,
     ],
   );
+
+  const listEmpty = useMemo(() => {
+    if (loading) {
+      return (
+        <View style={styles.emptySkeleton}>
+          <BoutiqueSkeletonLoader count={8} />
+        </View>
+      );
+    }
+    if (!error && boutiquesData.length > 0 && hasUserAppliedFilters) {
+      return (
+        <View style={styles.empty}>
+          <Text style={styles.emptyTitle}>No boutiques match</Text>
+          <Text style={styles.emptySub}>
+            Try adjusting search, distance, or sort.
+          </Text>
+        </View>
+      );
+    }
+    if (!error && boutiquesData.length === 0) {
+      return (
+        <View style={styles.empty}>
+          <Text style={styles.emptyTitle}>
+            {effectiveCoords ? "No Boutiques Found Nearby" : "No boutiques found"}
+          </Text>
+          <Text style={styles.emptySub}>
+            {effectiveCoords
+              ? "Try changing your location or expanding your search radius."
+              : "Pull to refresh or tap Retry above."}
+          </Text>
+          {effectiveCoords ? (
+            <Pressable
+              style={styles.emptyBtn}
+              onPress={() =>
+                router.push({
+                  pathname: "/(app)/location-selector",
+                  params: { returnTo: "boutiques" },
+                })
+              }
+            >
+              <Text style={styles.emptyBtnText}>Change Location</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      );
+    }
+    return null;
+  }, [
+    loading,
+    error,
+    boutiquesData.length,
+    hasUserAppliedFilters,
+    filteredBoutiques.length,
+    effectiveCoords,
+    router,
+  ]);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
@@ -396,34 +496,25 @@ export default function BoutiquesScreen() {
         style={styles.listFlex}
         data={filteredBoutiques}
         keyExtractor={(item) => item.id}
-        extraData={`${searchQuery}-${selectedSort}-${selectedDistance}-${locationLoading}-${locationPermission}-${userCoords?.lat ?? ""}-${userCoords?.lng ?? ""}-${locationGpsFailed}`}
+        extraData={`${searchQuery}-${selectedSort}-${selectedDistance}-${displayLabel}-${effectiveCoords?.lat ?? ""}-${effectiveCoords?.lng ?? ""}-${locationLoading}`}
         contentContainerStyle={styles.content}
         refreshControl={refreshControl}
         ListHeaderComponent={ListHeader}
         renderItem={renderItem}
-        ListEmptyComponent={
-          loading ? (
-            <View style={styles.emptySkeleton}>
-              <BoutiqueSkeletonLoader count={8} />
-            </View>
-          ) : !error && boutiquesData.length > 0 && hasUserAppliedFilters ? (
-            <View style={styles.empty}>
-              <Text style={styles.emptyTitle}>No boutiques match</Text>
-              <Text style={styles.emptySub}>
-                Try adjusting search, distance, or sort.
-              </Text>
-            </View>
-          ) : !error && boutiquesData.length === 0 ? (
-            <View style={styles.empty}>
-              <Text style={styles.emptyTitle}>No boutiques found</Text>
-              <Text style={styles.emptySub}>
-                Pull to refresh or tap Retry above.
-              </Text>
-            </View>
-          ) : null
-        }
+        ListEmptyComponent={listEmpty}
       />
       <BottomTabBar />
+
+      <LocationPermissionSheet
+        visible={permissionSheetVisible}
+        onAllow={() => void handleAllowLocation()}
+        onManual={() => void handleManualFromSheet()}
+        onDismiss={() => {
+          void useDiscoveryLocationStore.getState().markPromptSeen();
+          setPermissionSheetVisible(false);
+        }}
+        allowing={allowingLocation}
+      />
 
       <Modal
         visible={filterVisible}
@@ -537,12 +628,6 @@ const styles = StyleSheet.create({
     paddingTop: 4,
   },
   header: { marginBottom: spacing.lg, paddingTop: 6 },
-  heading: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: NAVY,
-    letterSpacing: -0.3,
-  },
   sectionHint: {
     marginTop: 4,
     fontSize: fontSizes.xs,
@@ -572,25 +657,6 @@ const styles = StyleSheet.create({
   },
   retryBtnText: { color: "#fff", fontWeight: "700", fontSize: fontSizes.xs },
   emptySkeleton: { paddingTop: spacing.sm },
-  locationRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 10,
-    gap: 6,
-  },
-  locationIcon: { marginRight: 2 },
-  locationText: {
-    flex: 1,
-    fontSize: fontSizes.sm,
-    color: "#374151",
-    fontWeight: "500",
-  },
-  changeLink: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#2563EB",
-    letterSpacing: 0.6,
-  },
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -754,6 +820,14 @@ const styles = StyleSheet.create({
     color: MUTED,
     textAlign: "center",
   },
+  emptyBtn: {
+    marginTop: 16,
+    backgroundColor: NAVY,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  emptyBtnText: { color: "#fff", fontWeight: "700", fontSize: fontSizes.sm },
   modalRoot: {
     flex: 1,
     justifyContent: "flex-end",

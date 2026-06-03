@@ -10,6 +10,8 @@ type AnalyticsPayload = {
     | 'guest_wishlist_attempt'
     | 'guest_cart_attempt'
     | 'guest_appointment_attempt'
+    | 'guest_browsing'
+    | 'guest_logout'
     | 'login_modal_opened'
     | 'login_success'
     | 'action_completed_after_login';
@@ -103,6 +105,16 @@ export function trackLoginSuccess(userId: string): void {
 /** Pending action executed after login. */
 export function trackActionCompletedAfterLogin(actionType: string): void {
   postGuestEvent('action_completed_after_login', { actionType });
+}
+
+/** Guest opened the app or resumed without an authenticated session. */
+export function trackGuestBrowsing(): void {
+  postGuestEvent('guest_browsing');
+}
+
+/** User signed out and returned to guest browsing. */
+export function trackGuestLogout(): void {
+  postGuestEvent('guest_logout');
 }
 
 /** Guest attempted login via protected action. */

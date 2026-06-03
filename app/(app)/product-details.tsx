@@ -49,7 +49,7 @@ import {
     type ProductDetail,
 } from "@/lib/services/catalogApi";
 import { pushProductDetails } from "@/lib/navigation/productNavigation";
-import { boutiqueListingCoverImage } from "@/lib/services/mock/imageUrls";
+import { resolveCoverImage } from "@/lib/boutiques/boutiqueUi";
 import { snapshotFromProductDetail } from "@/lib/services/mock/wishlist";
 import { useCartStore } from "@/lib/stores/cartStore";
 import { useRecentlyViewedStore } from "@/lib/stores/recentlyViewedStore";
@@ -213,7 +213,13 @@ export default function ProductDetailsScreen() {
       {
         id: product.boutique.id,
         name: product.boutique.name,
-        image: boutiqueListingCoverImage(product.boutique.id),
+        image:
+          resolveCoverImage({
+            id: product.boutique.id,
+            name: product.boutique.name,
+            image: product.boutique.image,
+            cover_image: product.boutique.image,
+          }) ?? product.boutique.image ?? null,
         location: product.boutique.location,
       },
       {
@@ -290,7 +296,7 @@ export default function ProductDetailsScreen() {
           >
             <MaterialIcons name="arrow-back-ios" size={22} color="#111827" />
           </Pressable>
-          <Text style={styles.brand}>THE ATELIER</Text>
+          <Text style={styles.brand}>GehnaHub</Text>
           <View style={{ width: 40 }} />
         </View>
         <View style={styles.missingBody}>
@@ -340,7 +346,7 @@ export default function ProductDetailsScreen() {
         >
           <MaterialIcons name="arrow-back-ios" size={22} color="#111827" />
         </Pressable>
-        <Text style={styles.brand}>THE ATELIER</Text>
+        <Text style={styles.brand}>GehnaHub</Text>
         <View style={{ width: 40 }} />
       </View>
       <ScrollView

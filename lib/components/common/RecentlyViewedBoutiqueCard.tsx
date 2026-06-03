@@ -93,6 +93,7 @@ export function RecentlyViewedBoutiqueCard({
           <RemoteImage
             uri={item.heroImage}
             fallbackTint="#e5e7eb"
+            placeholder="boutique-cover"
             style={styles.hero}
           />
           {item.verified ? (
@@ -140,14 +141,16 @@ export function RecentlyViewedBoutiqueCard({
           <MaterialIcons name="place" size={14} color={MUTED} />
           <Text style={styles.locText}>
             {item.location}
-            {" • "}
-            {formatBoutiqueDistanceLine({
-              distanceKm: item.distanceKm,
-              locationLoading,
-              hasBoutiqueCoords: boutiqueHasCoordinates(item),
-              permission: locationPermission,
-              userLocationGpsFailed,
-            })}
+            {(() => {
+              const distanceLine = formatBoutiqueDistanceLine({
+                distanceKm: item.distanceKm,
+                locationLoading,
+                hasBoutiqueCoords: boutiqueHasCoordinates(item),
+                permission: locationPermission,
+                userLocationGpsFailed,
+              });
+              return distanceLine ? ` • ${distanceLine}` : "";
+            })()}
           </Text>
         </View>
 

@@ -250,7 +250,7 @@ export default function ContactBoutiqueScreen() {
             <Text style={styles.cardTitle}>Phone Call</Text>
           </View>
           <Text style={styles.cardDesc}>
-            Schedule a private session at our atelier to browse our latest collection.
+            Schedule a private session at the boutique to browse our latest collection.
           </Text>
           <Pressable style={styles.btnOutline} onPress={dial}>
             <Text style={styles.btnOutlineText}>Call Us</Text>

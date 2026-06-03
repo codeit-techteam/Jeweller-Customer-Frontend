@@ -138,7 +138,7 @@ export default function GoldReservePlanScreen() {
                 </View>
                 <Text style={styles.heroIntro}>
                   Every month you pay, you receive gold units at live value. Protect your wealth from
-                  market fluctuations with our premium atelier reserve program.
+                  market fluctuations with our premium GehnaHub reserve program.
                 </Text>
               </View>
             </View>
@@ -163,7 +163,7 @@ export default function GoldReservePlanScreen() {
               <Text style={[styles.fieldLabel, { marginTop: 14 }]}>EMAIL ID</Text>
               <TextInput
                 style={styles.formInput}
-                placeholder="name@luxury.com"
+                placeholder="name@gehnahub.com"
                 placeholderTextColor="#94a3b8"
                 keyboardType="email-address"
                 autoCapitalize="none"

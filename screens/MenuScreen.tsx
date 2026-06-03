@@ -33,7 +33,6 @@ import { CallbackModal } from '@/lib/components/common/CallbackModal';
 import { ComingSoonModal } from '@/lib/components/common/ComingSoonModal';
 import { RemoteImage } from '@/lib/components/common/RemoteImage';
 import type { ComingSoonPlanId } from '@/lib/config/comingSoonPlans';
-import { categoryImageUri } from '@/lib/services/mock/imageUrls';
 import {
   fetchCategoriesUi,
   fetchMenuCategoriesUi,
@@ -42,6 +41,9 @@ import {
 } from '@/lib/services/catalogApi';
 import { fontSizes, radius, spacing } from '@/src/constants/theme';
 import { useAuth } from '@/context/AuthContext';
+import { useAuthGuard } from '@/src/hooks/useAuthGuard';
+import { useGuestLogout } from '@/src/hooks/useGuestLogout';
+import type { PendingAction } from '@/lib/types/pendingAction';
 
 const OPEN_MS = 280;
 const CLOSE_MS = 250;
@@ -108,11 +110,26 @@ const GOLD_PLAN_ITEMS: {
   { label: 'Gold Reserve', sub: '10+1 Monthly Plan', icon: 'savings', planId: 'gold_reserve', variant: 'reserve' },
 ];
 
-const UTILITY_ITEMS: { label: string; icon: IconName; href: Href }[] = [
+const UTILITY_ITEMS: {
+  label: string;
+  icon: IconName;
+  href: Href;
+  requiresAuth?: boolean;
+}[] = [
   { label: 'Recently Viewed', icon: 'history', href: '/(app)/recently-viewed' },
   { label: 'Find Boutique', icon: 'storefront', href: '/(app)/boutiques' },
-  { label: 'Saved Boutiques', icon: 'bookmark-border', href: '/(app)/saved-boutiques' },
-  { label: 'My Appointments', icon: 'event', href: '/(app)/my-appointments' },
+  {
+    label: 'Saved Boutiques',
+    icon: 'bookmark-border',
+    href: '/(app)/saved-boutiques',
+    requiresAuth: true,
+  },
+  {
+    label: 'My Appointments',
+    icon: 'event',
+    href: '/(app)/my-appointments',
+    requiresAuth: true,
+  },
 ];
 
 const APP_VERSION = Constants.expoConfig?.version ?? '1.0.0';
@@ -133,7 +150,9 @@ function userInitials(name: string | null | undefined): string {
 export default function MenuScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
+  const requireAuth = useAuthGuard();
+  const performGuestLogout = useGuestLogout();
   const { width: winW } = useWindowDimensions();
   const [callbackModalOpen, setCallbackModalOpen] = useState(false);
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
@@ -267,9 +286,18 @@ export default function MenuScreen() {
 
   const onConfirmLogout = useCallback(async () => {
     setLogoutModalVisible(false);
-    await logout();
-    navigateAfterClose('/(auth)/login');
-  }, [logout, navigateAfterClose]);
+    await performGuestLogout({ redirectToHome: false });
+    navigateAfterClose('/(app)/home');
+  }, [performGuestLogout, navigateAfterClose]);
+
+  const openProtectedUtility = useCallback(
+    (href: Href) => {
+      const pathname = typeof href === 'string' ? href : href.pathname;
+      const pending: PendingAction = { type: 'route', pathname: String(pathname) };
+      requireAuth(() => navigateAfterClose(href), { pendingAction: pending });
+    },
+    [requireAuth, navigateAfterClose],
+  );
 
   const openComingSoon = useCallback((planId: ComingSoonPlanId) => {
     if (Platform.OS !== 'web') {
@@ -321,10 +349,10 @@ export default function MenuScreen() {
                       style={styles.headerTextCol}
                     >
                       <Text style={styles.userName}>
-                        {user ? `Welcome, ${user.full_name}` : 'Welcome, Guest'}
+                        {user ? `Welcome ${user.full_name}` : 'Welcome Guest'}
                       </Text>
                       <Text style={styles.userSub}>
-                        {user ? formatPhone(user.phone) : 'Sign in / Register'}
+                        {user ? formatPhone(user.phone) : 'Login / Signup'}
                       </Text>
                     </Pressable>
                     <Pressable
@@ -359,10 +387,10 @@ export default function MenuScreen() {
                       onPress={() => navigateAfterClose('/(auth)/login')}
                       style={({ pressed }) => [pressed && styles.headerCtaPressed]}
                       accessibilityRole="button"
-                      accessibilityLabel="Continue to account"
+                      accessibilityLabel="Login or sign up"
                     >
                       <View style={styles.headerCta}>
-                        <Text style={styles.headerCtaText}>Continue to account</Text>
+                        <Text style={styles.headerCtaText}>Login / Signup</Text>
                         <MaterialIcons
                           name="chevron-right"
                           size={18}
@@ -467,7 +495,8 @@ export default function MenuScreen() {
                           >
                             <View style={styles.categoryImage}>
                               <RemoteImage
-                                uri={item.image ?? categoryImageUri(item.name)}
+                                uri={item.image ?? undefined}
+                                placeholder="category"
                                 fallbackTint="#f5f0e6"
                                 style={StyleSheet.absoluteFillObject}
                               />
@@ -529,7 +558,11 @@ export default function MenuScreen() {
                     {UTILITY_ITEMS.map((item) => (
                       <Pressable
                         key={item.label}
-                        onPress={() => navigateAfterClose(item.href)}
+                        onPress={() =>
+                          item.requiresAuth
+                            ? openProtectedUtility(item.href)
+                            : navigateAfterClose(item.href)
+                        }
                         style={({ pressed }) => [styles.menuItemOuter, pressed && styles.menuItemPressed]}
                         android_ripple={{ color: 'rgba(0,0,0,0.06)' }}
                       >
@@ -557,7 +590,11 @@ export default function MenuScreen() {
                     <TouchableOpacity
                       activeOpacity={0.7}
                       style={styles.chatBtn}
-                      onPress={() => navigateAfterClose('/(app)/chat' as Href)}
+                      onPress={() =>
+                        requireAuth(() => navigateAfterClose('/(app)/chat' as Href), {
+                          pendingAction: { type: 'route', pathname: '/(app)/chat' },
+                        })
+                      }
                     >
                       <MaterialIcons name="chat-bubble-outline" size={18} color="#fff" style={styles.btnIcon} />
                       <Text style={styles.chatText}>Chat</Text>
@@ -565,7 +602,12 @@ export default function MenuScreen() {
                     <TouchableOpacity
                       activeOpacity={0.7}
                       style={styles.callbackBtn}
-                      onPress={() => setCallbackModalOpen(true)}
+                      onPress={() =>
+                        requireAuth(() => setCallbackModalOpen(true), {
+                          pendingAction: { type: 'route', pathname: 'callback' },
+                          analyticsEvent: 'callback',
+                        })
+                      }
                     >
                       <MaterialIcons name="phone-callback" size={18} color="#fff" style={styles.btnIcon} />
                       <Text style={styles.callbackText}>Request callback</Text>

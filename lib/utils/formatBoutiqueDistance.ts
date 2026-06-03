@@ -25,7 +25,7 @@ export function formatBoutiqueDistanceLine(args: {
   const denied = args.permission === Location.PermissionStatus.DENIED;
 
   if (!args.hasBoutiqueCoords) {
-    return "Location unavailable";
+    return "";
   }
   if (denied) {
     return "Enable location for distance";

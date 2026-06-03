@@ -336,7 +336,7 @@ export default function CreateAccountScreen() {
                 setEmailBlurred(false);
                 onInputFocus('email')();
               }}
-              placeholder="evelyn@luxeandco.com"
+              placeholder="name@gehnahub.com"
               placeholderTextColor={MUTED}
               style={[
                 styles.input,
@@ -406,7 +406,7 @@ export default function CreateAccountScreen() {
               {newsletter ? <MaterialIcons name="check" size={16} color="#fff" /> : null}
             </Pressable>
             <Text style={styles.checkboxLabel}>
-              Subscribe to the LUXE & CO Newsletter for early access to &quot;The Archive&quot; releases.
+              Subscribe to the GehnaHub newsletter for early access to exclusive releases.
             </Text>
           </View>
 

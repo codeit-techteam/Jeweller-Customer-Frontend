@@ -48,7 +48,10 @@ export default function LocationPermissionScreen() {
   };
 
   const handleManual = () => {
-    router.push('/location-manual');
+    router.push({
+      pathname: '/(app)/location-selector',
+      params: { returnTo: 'home' },
+    });
   };
 
   return (
@@ -68,17 +71,16 @@ export default function LocationPermissionScreen() {
       </View>
 
       <View style={styles.content}>
-        <Text style={styles.title}>Discover Jewellery Near You</Text>
+        <Text style={styles.title}>Discover Boutiques Near You</Text>
         <Text style={styles.body}>
-          Allow location access to find nearby boutiques, get personalized recommendations, and book store visits
-          easily.
+          Allow location access to find nearby jewellery boutiques and personalized recommendations.
         </Text>
       </View>
 
       <View style={styles.actions}>
-        <Button label={isRequesting ? 'Enabling…' : 'Enable Location'} onPress={handleEnableLocation} disabled={isRequesting} />
+        <Button label={isRequesting ? 'Enabling…' : 'Allow Location'} onPress={handleEnableLocation} disabled={isRequesting} />
         <TouchableOpacity onPress={handleManual} style={styles.secondaryButton}>
-          <Text style={styles.secondaryText}>Enter Location Manually</Text>
+          <Text style={styles.secondaryText}>Choose Location Manually</Text>
         </TouchableOpacity>
       </View>
 

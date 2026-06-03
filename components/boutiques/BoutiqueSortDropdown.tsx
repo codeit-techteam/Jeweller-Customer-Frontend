@@ -27,8 +27,9 @@ import { fontSizes } from '@/src/constants/theme';
 export type BoutiqueSortOptionId =
   | 'NEAREST'
   | 'HIGHEST_RATED'
-  | 'OPEN_NOW'
-  | 'MOST_REVIEWED';
+  | 'MOST_REVIEWED'
+  | 'RECENTLY_ADDED'
+  | 'OPEN_NOW';
 
 export const BOUTIQUE_SORT_OPTIONS: {
   id: BoutiqueSortOptionId;
@@ -37,8 +38,8 @@ export const BOUTIQUE_SORT_OPTIONS: {
 }[] = [
   { id: 'NEAREST', label: 'Nearest', icon: 'near-me' },
   { id: 'HIGHEST_RATED', label: 'Highest Rated', icon: 'star-outline' },
-  { id: 'OPEN_NOW', label: 'Open Now', icon: 'schedule' },
   { id: 'MOST_REVIEWED', label: 'Most Reviewed', icon: 'rate-review' },
+  { id: 'RECENTLY_ADDED', label: 'Recently Added', icon: 'fiber-new' },
 ];
 
 type SortRowDef = {

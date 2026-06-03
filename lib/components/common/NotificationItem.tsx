@@ -16,6 +16,11 @@ const ICON_MAP: Record<AppNotification['type'], keyof typeof MaterialIcons.glyph
   appointment: 'event',
   offer: 'sell',
   collection: 'auto-awesome',
+  callback: 'support-agent',
+  support: 'chat',
+  gold_rate: 'trending-up',
+  promotion: 'local-offer',
+  profile: 'account-circle',
 };
 
 type Props = {
@@ -36,7 +41,7 @@ export function NotificationItem({ item, onPress, onActionPress }: Props) {
       >
         <View style={styles.rowTop}>
           <View style={styles.iconCircle}>
-            <MaterialIcons name={ICON_MAP[item.iconType]} size={20} color="#1e293b" />
+            <MaterialIcons name={ICON_MAP[item.type] ?? 'notifications'} size={20} color="#1e293b" />
           </View>
           <View style={styles.textCol}>
             <View style={styles.titleRow}>
@@ -45,8 +50,12 @@ export function NotificationItem({ item, onPress, onActionPress }: Props) {
               </Text>
               <Text style={styles.time}>{item.timeLabel}</Text>
             </View>
-            <Text style={[styles.message, unread && styles.messageUnread]}>{item.body}</Text>
-            {item.imageUri ? <RemoteImage uri={item.imageUri} style={styles.imageBlock} /> : null}
+            <Text style={[styles.message, unread && styles.messageUnread]}>
+              {item.body}
+            </Text>
+            {item.imageUri || item.imageUrl ? (
+              <RemoteImage uri={item.imageUri ?? item.imageUrl!} style={styles.imageBlock} />
+            ) : null}
           </View>
           {unread ? <View style={styles.unreadDot} /> : <View style={styles.dotPlaceholder} />}
         </View>

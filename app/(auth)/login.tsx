@@ -111,8 +111,8 @@ export default function LoginScreen() {
             <View style={styles.logoCircle}>
               <MaterialIcons name="diamond" size={32} color={NAVY} />
             </View>
-            <Text style={styles.brand}>LUXE & CO</Text>
-            <Text style={styles.brandSub}>FINE JEWELLERY</Text>
+            <Text style={styles.brand}>GehnaHub</Text>
+            <Text style={styles.brandSub}>FINE JEWELLERY NETWORK</Text>
           </View>
 
           <View style={styles.card}>

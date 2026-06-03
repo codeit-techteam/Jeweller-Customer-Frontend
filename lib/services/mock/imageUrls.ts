@@ -2,6 +2,14 @@
  * Curated Unsplash URLs — Indian jewellery, luxury retail, campaigns.
  */
 
+import {
+  CURATED_CATEGORY_UNSPLASH,
+  RINGS_CATEGORY_PHOTO_ID,
+  curatedCategoryImageUrl,
+  normalizeCategoryKey,
+  resolveCategoryImageUrl,
+} from "@/lib/catalog/categoryImage";
+
 const q = (photoId: string, w = 800) =>
   `https://images.unsplash.com/${photoId}?w=${w}&q=85&auto=format&fit=crop`;
 
@@ -14,84 +22,43 @@ export const PLACEHOLDER_IMAGE_URI = q('photo-1588444650733-d2c8a2eac3c5', 900);
 /** Secondary fallback if primary URL fails to load (showroom / luxury retail). */
 export const IMAGE_FALLBACK_SECONDARY = q('photo-1601121141461-9d6647bca1ed', 900);
 
-/** Category anchors (Figma / product spec) */
-export const RING_CATEGORY_ANCHOR = q('photo-1617038260897-41a1f14a8ca0', 900);
-/** User reference: https://images.unsplash.com/photo-1602751584552-8ba73aad10e1 */
-export const NECKLACE_CATEGORY_ANCHOR = q('photo-1602751584552-8ba73aad10e1', 900);
-export const EARRING_CATEGORY_ANCHOR = q('photo-1599643478518-a784e5dc4c8f', 900);
-export const BANGLE_CATEGORY_ANCHOR = q('photo-1620336655055-b57986f6e9e2', 900);
+/** Category anchors — re-export curated map (single source of truth). */
+export const RING_CATEGORY_ANCHOR =
+  CURATED_CATEGORY_UNSPLASH.rings ?? q(RINGS_CATEGORY_PHOTO_ID, 900);
+export const NECKLACE_CATEGORY_ANCHOR =
+  CURATED_CATEGORY_UNSPLASH.necklaces ?? q("photo-1602751584552-8ba73aad10e1", 900);
+export const EARRING_CATEGORY_ANCHOR =
+  CURATED_CATEGORY_UNSPLASH.earrings ?? q("photo-1599643478518-a784e5dc4c8f", 900);
+export const BANGLE_CATEGORY_ANCHOR =
+  CURATED_CATEGORY_UNSPLASH.bangles ?? q("photo-1620336655055-b57986f6e9e2", 900);
 
-/** Coin / bullion category — warm gold visuals (jewellery-adjacent) */
-const COINS_GOLD = [
-  q('photo-1617038260897-41a1f14a8ca0', 900),
-  q('photo-1588444650733-d2c8a2eac3c5', 900),
-  q('photo-1605100804763-247f67b3557e', 900),
-];
+function poolForSlug(slug: string): string[] {
+  const primary = CURATED_CATEGORY_UNSPLASH[slug];
+  if (!primary) return [RING_CATEGORY_ANCHOR];
+  return [primary];
+}
 
-const RINGS = [
-  RING_CATEGORY_ANCHOR,
-  q('photo-1588444650733-d2c8a2eac3c5', 900),
-  q('photo-1605100804763-247f67b3557e', 900),
-  q('photo-1603561596112-0a132b757442', 900),
-  q('photo-1573408304045-c59d01b444f7', 900),
-  q('photo-1599643478518-a784e5dc4c8f', 900),
-];
+const POOL_BY_CATEGORY: Record<string, string[]> = Object.fromEntries(
+  Object.keys(CURATED_CATEGORY_UNSPLASH).map((slug) => [
+    slug.replace(/-/g, "_").toUpperCase(),
+    poolForSlug(slug),
+  ]),
+);
 
-const NECKLACES = [
-  NECKLACE_CATEGORY_ANCHOR,
-  q('photo-1601121141461-9d6647bca1ed', 900),
-  q('photo-1611591437281-460bfbe1220a', 900),
-  q('photo-1515562141207-7e88fb950be7', 900),
-  q('photo-1596944924616-7b38e7cfac36', 900),
-];
-
-const EARRINGS = [
-  EARRING_CATEGORY_ANCHOR,
-  q('photo-1535632066927-ab7c95ab70b6', 900),
-  q('photo-1611658471626-53b62d81650a', 900),
-  q('photo-1605100804763-247f67b3557e', 900),
-];
-
-const BANGLES = [
-  BANGLE_CATEGORY_ANCHOR,
-  q('photo-1599643478518-a784e5dc4c8f', 900),
-  q('photo-1603561596112-0a132b757442', 900),
-  q('photo-1611591437281-460bfbe1220a', 900),
-];
-
-const POOL_BY_CATEGORY: Record<string, string[]> = {
-  RINGS,
-  NECKLACES,
-  EARRINGS,
-  BANGLES,
-  PENDANTS: [...NECKLACES, ...RINGS],
-  BRACELETS: [...BANGLES, ...RINGS],
-  COINS: COINS_GOLD,
-  SOLITAIRES: RINGS,
-  MANGALSUTRAS: NECKLACES,
-  /** "MEN'S RINGS".replace(/\s+/g, '_') */
-  "MEN'S_RINGS": RINGS,
-  NOSE_PINS: EARRINGS,
-  GOLD_COINS: COINS_GOLD,
-  /** Normalized keys (filters strip spaces) */
-  NOSEPINS: EARRINGS,
-  GOLDCOINS: COINS_GOLD,
-};
-
-export const CATEGORY_HOME_IMAGE: Record<string, string> = {
-  RINGS: RING_CATEGORY_ANCHOR,
-  NECKLACES: NECKLACE_CATEGORY_ANCHOR,
-  EARRINGS: EARRING_CATEGORY_ANCHOR,
-  BANGLES: BANGLE_CATEGORY_ANCHOR,
-  PENDANTS: q('photo-1611591437281-460bfbe1220a', 600),
-  BRACELETS: BANGLE_CATEGORY_ANCHOR,
-  'NOSE PINS': EARRING_CATEGORY_ANCHOR,
-  COINS: COINS_GOLD[0],
-  SOLITAIRES: q('photo-1588444650733-d2c8a2eac3c5', 600),
-  MANGALSUTRAS: q('photo-1602751584552-8ba73aad10e1', 600),
-  'GOLD COINS': COINS_GOLD[0],
-  "MEN'S RINGS": RING_CATEGORY_ANCHOR,
-};
+/** Legacy uppercase labels → curated URL */
+export const CATEGORY_HOME_IMAGE: Record<string, string> = Object.fromEntries(
+  Object.entries(CURATED_CATEGORY_UNSPLASH).flatMap(([slug, url]) => {
+    const label = slug.replace(/-/g, " ").toUpperCase();
+    const alt = slug === "mens-rings" ? "MEN'S RINGS" : label;
+    const nose = slug === "nose-pins" ? "NOSE PINS" : alt;
+    const gold = slug === "gold-coins" ? "GOLD COINS" : nose;
+    return [
+      [label, url],
+      [gold, url],
+      [slug.toUpperCase(), url],
+    ];
+  }),
+);
 
 /** Hero strip on home + occasions */
 export const COLLECTION_HERO_URIS = {
@@ -131,17 +98,19 @@ export function tintFor(id: string, i: number): string {
 }
 
 function poolFor(category: string): string[] {
-  const normalized = category.toUpperCase().replace(/\s+/g, '_');
-  return POOL_BY_CATEGORY[normalized] ?? POOL_BY_CATEGORY[category] ?? RINGS;
+  const slug = normalizeCategoryKey(category);
+  const fromCurated = CURATED_CATEGORY_UNSPLASH[slug];
+  if (fromCurated) return [fromCurated];
+  const normalized = category.toUpperCase().replace(/\s+/g, "_");
+  return POOL_BY_CATEGORY[normalized] ?? [RING_CATEGORY_ANCHOR];
 }
 
-/** Category grid / pills — matches labels from `categories` mock */
-export function categoryImageUri(label: string): string {
-  const trimmed = label.trim();
-  if (CATEGORY_HOME_IMAGE[trimmed]) return CATEGORY_HOME_IMAGE[trimmed];
-  const upper = trimmed.toUpperCase();
-  if (CATEGORY_HOME_IMAGE[upper]) return CATEGORY_HOME_IMAGE[upper];
-  return CATEGORY_HOME_IMAGE.RINGS ?? RING_CATEGORY_ANCHOR;
+/** Category grid / pills — curated fallback only; never cross-category. */
+export function categoryImageUri(
+  label: string,
+  dbImage?: string | null,
+): string | null {
+  return resolveCategoryImageUrl({ name: label, image: dbImage });
 }
 
 const MOCK_VIDEO_MP4 =

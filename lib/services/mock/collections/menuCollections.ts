@@ -46,7 +46,7 @@ const WOMEN_COPY: MenuCollectionCopy = {
   footer: {
     title: 'Her Everyday Luxury',
     body:
-      'Hand-finished pieces backed by LUXE & CO assurance — certified stones, transparent pricing, and artistry that lasts generations.',
+      'Hand-finished pieces backed by GehnaHub assurance — certified stones, transparent pricing, and artistry that lasts generations.',
   },
 };
 
@@ -109,7 +109,7 @@ const OFFERS_COPY: MenuCollectionCopy = {
   footer: {
     title: 'Shop Before They’re Gone',
     body:
-      'Every piece on offer carries the full LUXE & CO guarantee — BIS hallmarks, lifetime exchange, and certified diamonds.',
+      'Every piece on offer carries the full GehnaHub guarantee — BIS hallmarks, lifetime exchange, and certified diamonds.',
   },
 };
 
@@ -130,7 +130,7 @@ const GIFTS_COPY: MenuCollectionCopy = {
   footer: {
     title: 'A Gift That Stays',
     body:
-      'Every LUXE & CO gift arrives in a signature case with a certificate — because the moment deserves to be remembered.',
+      'Every GehnaHub gift arrives in a signature case with a certificate — because the moment deserves to be remembered.',
   },
 };
 

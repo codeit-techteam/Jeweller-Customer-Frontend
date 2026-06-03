@@ -5,6 +5,11 @@
 
 import { Image } from "react-native";
 
+import {
+  boutiqueLocationFieldsFromRow,
+  formatBoutiqueLocation,
+  formatBoutiqueShortLocation,
+} from "@/lib/utils/formatBoutiqueLocation";
 import { calculateDistanceKm, parseCoord } from "@/utils/calculateDistance";
 
 /** Raw boutique row from GET /api/boutiques or nested in product. */
@@ -13,11 +18,18 @@ export type BoutiqueApiListRow = {
   name: string;
   image?: string | null;
   cover_image?: string | null;
+  cover_image_url?: string | null;
   /** Alias for logo_url when API adds explicit column. */
   logo_image?: string | null;
   logo_url?: string | null;
   logo?: string | null;
   location?: string | null;
+  address?: string | null;
+  area?: string | null;
+  city?: string | null;
+  state?: string | null;
+  country?: string | null;
+  pincode?: string | null;
   rating?: number | null;
   reviews_count?: number | null;
   description?: string | null;
@@ -43,6 +55,7 @@ export type BoutiqueApiListRow = {
   phone_number?: string | null;
   whatsapp?: string | null;
   whatsapp_number?: string | null;
+  created_at?: string | null;
 };
 
 export type BoutiqueProductItemUi = {
@@ -112,6 +125,7 @@ export type BoutiqueUiListItem = {
   whatsapp?: string | null;
   latitude?: number | null;
   longitude?: number | null;
+  createdAt?: string | null;
 };
 
 const COLLECTION_KEY_ALIASES: Record<string, string> = {
@@ -246,11 +260,18 @@ function httpUrls(raw: unknown): string[] {
 }
 
 export function resolveCoverImage(row: BoutiqueApiListRow): string | null {
+  const gallery = httpUrls(row.gallery_images);
   const c =
+    (typeof row.cover_image_url === "string" && row.cover_image_url.trim()) ||
     (typeof row.cover_image === "string" && row.cover_image.trim()) ||
     (typeof row.image === "string" && row.image.trim()) ||
+    gallery[0] ||
     null;
-  return c && c.startsWith("http") ? c : null;
+  const url = c && c.startsWith("http") ? c.trim() : null;
+  if (__DEV__ && url) {
+    console.log("[boutiqueUi] cover", { id: row.id, name: row.name, url });
+  }
+  return url;
 }
 
 export function resolveLogoImage(row: BoutiqueApiListRow): string | null {
@@ -268,6 +289,7 @@ export function buildGalleryBannerSlides(row: {
   banner_images?: string[] | null;
   image?: string | null;
   cover_image?: string | null;
+  cover_image_url?: string | null;
 }): { tint: string; uri?: string }[] {
   const fromGallery = httpUrls(row.gallery_images);
   const fromBanners = httpUrls(row.banner_images);
@@ -482,12 +504,22 @@ export function mapBoutiqueForUi(
     (typeof row.whatsapp_number === "string" && row.whatsapp_number.trim()) ||
     null;
 
+  const locationFields = boutiqueLocationFieldsFromRow(row);
+  const formattedLocation = formatBoutiqueLocation(locationFields);
+  if (__DEV__) {
+    console.log("[mapBoutiqueForUi] location", {
+      id: row.id,
+      raw: locationFields,
+      formatted: formattedLocation,
+    });
+  }
+
   return {
     id: row.id,
     name: row.name,
     image: cover,
     logoImage: logo,
-    location: row.location?.trim() || "Location unavailable",
+    location: formattedLocation,
     rating,
     distanceKm,
     reviewsCount,
@@ -506,6 +538,7 @@ export function mapBoutiqueForUi(
     whatsapp: whatsappRaw,
     latitude: boutiqueCoords?.lat ?? null,
     longitude: boutiqueCoords?.lng ?? null,
+    createdAt: row.created_at ?? null,
   };
 }
 
@@ -525,8 +558,16 @@ export function mapBoutiqueDetailToProfileViewModel(row: BoutiqueApiListRow & {
   const items = mapProductsForProfile(row.products ?? []);
   const collectionTabs = buildCollectionTabsFromProducts(items, row.collections ?? []);
 
-  const shortLocation =
-    row.location?.split(",")[0]?.trim() ?? row.location ?? "Location unavailable";
+  const locationFields = boutiqueLocationFieldsFromRow(row);
+  const formattedLocation = formatBoutiqueLocation(locationFields);
+  const shortLocation = formatBoutiqueShortLocation(locationFields);
+  if (__DEV__) {
+    console.log("[mapBoutiqueDetailToProfileViewModel] location", {
+      id: row.id,
+      raw: locationFields,
+      formatted: formattedLocation,
+    });
+  }
   const openingLabel =
     formatTimeRange(row.opening_time, row.closing_time) ||
     row.opening_hours?.trim() ||
@@ -552,7 +593,7 @@ export function mapBoutiqueDetailToProfileViewModel(row: BoutiqueApiListRow & {
     name: row.name,
     rating,
     reviewCount,
-    location: row.full_address?.trim() || row.location?.trim() || "Location unavailable",
+    location: formattedLocation,
     shortLocation,
     description:
       row.description?.trim() ||
@@ -576,9 +617,8 @@ export function mapBoutiqueDetailToProfileViewModel(row: BoutiqueApiListRow & {
     mapsQuery:
       coords != null
         ? `${coords.lat},${coords.lng}`
-        : `${(row.full_address ?? row.location ?? "Location unavailable").replace(/,/g, " ").trim()} jewellery`,
-    contactAddress:
-      row.full_address?.trim() || row.location?.trim() || "Location unavailable",
+        : `${formattedLocation.replace(/,/g, " ").trim()} jewellery`,
+    contactAddress: formattedLocation,
     collections: collectionTabs,
     openingTime: row.opening_time ?? null,
     closingTime: row.closing_time ?? null,

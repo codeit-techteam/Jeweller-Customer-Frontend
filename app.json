@@ -1,17 +1,22 @@
 {
   "expo": {
-    "name": "Piyush-App",
-    "slug": "Piyush-App",
+    "name": "GehnaHub",
+    "slug": "gehnahub",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "piyushapp",
+    "scheme": "gehnahub",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.gehnahub.app",
+      "infoPlist": {
+        "CFBundleDisplayName": "GehnaHub"
+      }
     },
     "android": {
+      "softwareKeyboardLayoutMode": "resize",
       "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
@@ -28,7 +33,7 @@
         "WRITE_EXTERNAL_STORAGE",
         "RECORD_AUDIO"
       ],
-      "package": "com.piyush.app"
+      "package": "com.gehnahub.app"
     },
     "web": {
       "output": "static",

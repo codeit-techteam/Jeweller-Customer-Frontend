@@ -1,4 +1,8 @@
-import { categoryImageUri, productPrimaryUri } from '@/lib/services/mock/imageUrls';
+import {
+  categoryImageUri,
+  productPrimaryUri,
+  RING_CATEGORY_ANCHOR,
+} from '@/lib/services/mock/imageUrls';
 
 export type SearchSpotlightProduct = {
   id: string;
@@ -71,9 +75,24 @@ export const searchSpotlightProducts: SearchSpotlightProduct[] = [
 ];
 
 export const shopByCategoryIcons: CategoryIconItem[] = [
-  { id: 'c1', label: 'RINGS', categoryParam: 'RINGS', imageUri: categoryImageUri('RINGS') },
-  { id: 'c2', label: 'NECKLACES', categoryParam: 'NECKLACES', imageUri: categoryImageUri('NECKLACES') },
-  { id: 'c3', label: 'EARRINGS', categoryParam: 'EARRINGS', imageUri: categoryImageUri('EARRINGS') },
+  {
+    id: 'c1',
+    label: 'RINGS',
+    categoryParam: 'RINGS',
+    imageUri: categoryImageUri('RINGS') ?? RING_CATEGORY_ANCHOR,
+  },
+  {
+    id: 'c2',
+    label: 'NECKLACES',
+    categoryParam: 'NECKLACES',
+    imageUri: categoryImageUri('NECKLACES') ?? RING_CATEGORY_ANCHOR,
+  },
+  {
+    id: 'c3',
+    label: 'EARRINGS',
+    categoryParam: 'EARRINGS',
+    imageUri: categoryImageUri('EARRINGS') ?? RING_CATEGORY_ANCHOR,
+  },
 ];
 
 /** Curated Unsplash refs — search “Shop by Occasion” horizontal cards */

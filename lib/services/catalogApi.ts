@@ -1,3 +1,4 @@
+import { resolveCategoryImageUrl } from "@/lib/catalog/categoryImage";
 import {
     ApiError,
     getBoutiqueById,
@@ -19,6 +20,7 @@ import {
   trendingSearches,
   type TrendingSearchChip,
 } from "@/lib/services/mock/search";
+import { formatBoutiqueLocation } from "@/lib/utils/formatBoutiqueLocation";
 import { fetchBoutiques } from "@/services/boutique.service";
 import type { UserCoords } from "@/services/boutique.service";
 
@@ -334,6 +336,7 @@ export type CategoryUi = {
   id: string;
   name: string;
   image: string | null;
+  category_image_url?: string | null;
   slug: string | null;
   subtitle?: string | null;
   /** Admin-defined product order for this category, sourced from the
@@ -346,19 +349,30 @@ export async function fetchCategoriesUi(): Promise<CategoryUi[]> {
     console.log("Fetching categories...");
   }
   const rows = await getCategories();
-  return rows.map((row) => ({
+  return rows.map((row) => {
+    const slug = row.slug ?? row.name.toLowerCase().replace(/\s+/g, "-");
+    const resolved = resolveCategoryImageUrl({
+      category_image_url:
+        (row as { category_image_url?: string | null }).category_image_url ??
+        row.image,
+      image: row.image,
+      name: row.name,
+      slug,
+    });
+    return {
     id: row.id,
     name: row.name,
-    image: row.image ?? null,
-    slug:
-      row.slug ?? row.name.toLowerCase().replace(/\s+/g, "-"),
+    image: resolved,
+    category_image_url: resolved,
+    slug,
     subtitle: row.subtitle ?? null,
     productIds: Array.isArray(row.product_ids)
       ? row.product_ids
       : Array.isArray(row.products)
         ? row.products.map((item) => item.id)
         : [],
-  }));
+  };
+  });
 }
 
 export async function fetchBoutiquesUi(userLocation?: UserCoords | null) {
@@ -771,7 +785,7 @@ export async function fetchTrendingProductsUi() {
       description:
         section?.subtitle?.trim() ||
         section?.description?.trim() ||
-        "Curated by Luxe & Co",
+        "Curated by GehnaHub",
       price: `₹ ${Number(row.price ?? 0).toLocaleString("en-IN")}`,
       imageTint: index % 2 === 0 ? "#d4e4f0" : "#e8e4dc",
       imageUri: row.image?.trim() ? row.image.trim() : PLACEHOLDER_IMAGE_URI,
@@ -971,17 +985,23 @@ export async function fetchProductDetailUi(
         row.boutique?.is_verified ?? row.boutique?.verified ?? false,
       ),
       address: row.boutique?.address ?? row.boutique?.location ?? "",
-      location:
-        row.boutique?.location ??
-        row.boutique?.address ??
-        "Location unavailable",
+      location: formatBoutiqueLocation({
+        location: row.boutique?.location ?? null,
+        full_address:
+          (row.boutique as { full_address?: string | null })?.full_address ?? null,
+        address: row.boutique?.address ?? null,
+      }),
       distance:
         row.boutique?.distance != null &&
         Number.isFinite(Number(row.boutique.distance))
           ? Number(row.boutique.distance)
           : null,
-      image: row.boutique?.image ?? null,
-      logo: row.boutique?.logo ?? row.boutique?.image ?? null,
+      image:
+        row.boutique?.cover_image ??
+        row.boutique?.image ??
+        (row.boutique as { cover_image_url?: string | null })?.cover_image_url ??
+        null,
+      logo: row.boutique?.logo ?? null,
       avatarTint: boutiqueAvatarTint(String(boutiqueIdFallback)),
       phone:
         row.boutique?.phone ?? row.boutique?.contact_details?.phone ?? null,

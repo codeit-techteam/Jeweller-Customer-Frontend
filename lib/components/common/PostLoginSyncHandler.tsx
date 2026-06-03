@@ -4,7 +4,7 @@ import { useAuth } from '@/context/AuthContext';
 import { handleLoginSuccess } from '@/lib/services/postLoginSync';
 import { useGuestSessionStore } from '@/lib/stores/guestSessionStore';
 import { useCartStore } from '@/lib/stores/cartStore';
-import { trackLoginSuccess } from '@/services/analyticsTracking';
+import { trackGuestBrowsing, trackLoginSuccess } from '@/services/analyticsTracking';
 
 /**
  * Watches auth state and runs post-login sync (cart merge, wishlist sync, pending actions).
@@ -14,6 +14,7 @@ export function PostLoginSyncHandler() {
   const { user, loading } = useAuth();
   const prevUserIdRef = useRef<string | null>(null);
   const initialHydrationRef = useRef(true);
+  const guestBrowsingTrackedRef = useRef(false);
   const hydrateGuest = useGuestSessionStore((s) => s.hydrate);
   const hydrateCart = useCartStore((s) => s.hydrateCart);
 
@@ -41,6 +42,12 @@ export function PostLoginSyncHandler() {
 
     prevUserIdRef.current = userId;
   }, [user?.id, loading]);
+
+  useEffect(() => {
+    if (loading || user?.id || guestBrowsingTrackedRef.current) return;
+    guestBrowsingTrackedRef.current = true;
+    trackGuestBrowsing();
+  }, [loading, user?.id]);
 
   return null;
 }

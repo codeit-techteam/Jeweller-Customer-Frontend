@@ -33,6 +33,7 @@ export function getCategories() {
       id: string;
       name: string;
       image: string | null;
+      category_image_url?: string | null;
       slug?: string | null;
       subtitle?: string | null;
       description?: string | null;
@@ -262,6 +263,7 @@ export function getBoutiques() {
       coordinates?: { lat: number; lng: number } | null;
       latitude?: number | null;
       longitude?: number | null;
+      created_at?: string | null;
     }>
   >("/api/boutiques", { method: "GET", params: { t: stamp } });
 }
@@ -779,5 +781,35 @@ export function removeWishlistProduct(productId: string, userId: string) {
 export function getWishlistCount(userId: string) {
   return request<{ count: number }>("/api/wishlist/count", undefined, {
     userId,
+  });
+}
+
+export type CallbackTimeSlot = "morning" | "afternoon" | "evening";
+
+export type CallbackRequestRow = {
+  id: string;
+  referenceId: string;
+  customerId: string | null;
+  customerName: string | null;
+  mobileNumber: string;
+  preferredTimeSlot: CallbackTimeSlot;
+  requirement: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CreateCallbackRequestBody = {
+  customerId?: string | null;
+  customerName?: string | null;
+  mobileNumber: string;
+  preferredTimeSlot: CallbackTimeSlot;
+  requirement: string;
+};
+
+export function createCallbackRequest(body: CreateCallbackRequestBody) {
+  return request<CallbackRequestRow>("/api/callback-requests", {
+    method: "POST",
+    data: body,
   });
 }

@@ -12,7 +12,7 @@ type Props = {
   shareMessage?: string;
 };
 
-export function BoutiqueHeader({ title = 'BOUTIQUE PROFILE', onBack, shareMessage = 'The Atelier — Boutique' }: Props) {
+export function BoutiqueHeader({ title = 'BOUTIQUE PROFILE', onBack, shareMessage = 'GehnaHub — Boutique' }: Props) {
   const onShare = async () => {
     try {
       await Share.share({ message: shareMessage });

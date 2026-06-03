@@ -1,4 +1,9 @@
-import { CATEGORY_HOME_IMAGE, COLLECTION_HERO_URIS, categoryImageUri } from '@/lib/services/mock/imageUrls';
+import {
+  CATEGORY_HOME_IMAGE,
+  COLLECTION_HERO_URIS,
+  RING_CATEGORY_ANCHOR,
+  categoryImageUri,
+} from '@/lib/services/mock/imageUrls';
 
 /** Explicit `image` map for each category label (same as `CATEGORY_HOME_IMAGE` in `imageUrls`). */
 export { CATEGORY_HOME_IMAGE as categoryImages };
@@ -43,7 +48,7 @@ export const trendingCollections: TrendingCollectionItem[] = [
   {
     title: 'Everyday Eleg...',
     subtitle: '14k Gold...',
-    image: categoryImageUri('RINGS'),
+    image: categoryImageUri('RINGS') ?? RING_CATEGORY_ANCHOR,
     slug: 'everyday',
   },
 ];

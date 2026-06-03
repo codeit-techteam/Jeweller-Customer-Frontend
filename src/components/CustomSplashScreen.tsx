@@ -19,12 +19,12 @@ export function CustomSplashScreen({ onFinish }: Props) {
             <Text style={styles.iconText}>◆</Text>
           </View>
         </View>
-        <Text style={styles.brand}>LUXE</Text>
+        <Text style={styles.brand}>GehnaHub</Text>
         <View style={styles.separator} />
-        <Text style={styles.tagline}>HANDCRAFTED ELEGANCE</Text>
+        <Text style={styles.tagline}>FINE JEWELLERY NETWORK</Text>
       </View>
       <View style={styles.footer}>
-        <Text style={styles.footerText}>POWERED BY MODERN CRAFTSMANSHIP</Text>
+        <Text style={styles.footerText}>INDIA'S JEWELLERY MARKETPLACE</Text>
         <Text style={styles.footerSubText}>EST. 2024</Text>
       </View>
     </View>

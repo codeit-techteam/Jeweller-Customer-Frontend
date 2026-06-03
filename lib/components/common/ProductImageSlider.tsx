@@ -271,7 +271,7 @@ export function ProductImageSlider({
 
   const onShare = useCallback(async () => {
     try {
-      await Share.share({ message: `${productName} — The Atelier` });
+      await Share.share({ message: `${productName} — GehnaHub` });
     } catch {
       /* ignore */
     }

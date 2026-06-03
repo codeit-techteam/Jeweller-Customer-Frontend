@@ -5,7 +5,7 @@ export const luxury = {
   goldLight: '#F5E6B8',
   goldDark: '#2C2410',
   goldShadow: 'rgba(180, 140, 40, 0.35)',
-  segmentTrack: '#EBE9E4',
+  segmentTrack: '#F7F7F7',
   segmentInactive: '#78746E',
   iconMuted: '#8A857D',
   blueSoft: '#E8F0FE',

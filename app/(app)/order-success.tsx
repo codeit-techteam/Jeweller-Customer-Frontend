@@ -138,7 +138,7 @@ export default function OrderSuccessScreen() {
           <Text style={[styles.decorDiamond, styles.decorSpacer]}>✦</Text>
           <View style={styles.decorLine} />
         </View>
-        <Text style={styles.footerCap}>THANK YOU FOR CHOOSING LUXURY</Text>
+        <Text style={styles.footerCap}>THANK YOU FOR CHOOSING GEHNAHUB</Text>
 
         <View style={{ height: spacing['2xl'] }} />
       </ScrollView>

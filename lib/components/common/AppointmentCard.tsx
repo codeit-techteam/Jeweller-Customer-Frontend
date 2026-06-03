@@ -184,7 +184,12 @@ export function AppointmentCard({
           onPress={onPress}
           style={({ pressed }) => [styles.imagePressable, pressed && styles.pressed]}
         >
-          <RemoteImage uri={item.image} fallbackTint="#d4c4a8" style={styles.cardImage} />
+          <RemoteImage
+            uri={item.image}
+            fallbackTint="#d4c4a8"
+            placeholder="boutique-cover"
+            style={styles.cardImage}
+          />
           <LinearGradient
             colors={['rgba(26, 24, 20, 0.65)', 'rgba(26, 24, 20, 0.2)', 'transparent']}
             locations={[0, 0.5, 1]}

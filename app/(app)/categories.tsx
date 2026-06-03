@@ -56,7 +56,9 @@ const IMAGE_SIZE = 70;
 export default function CategoriesScreen() {
   const router = useRouter();
   const horizontalPad = spacing.lg;
-  const [categories, setCategories] = useState<Array<{ id: string; name: string; image: string | null }>>([]);
+  const [categories, setCategories] = useState<
+    Array<{ id: string; name: string; image: string | null; slug: string | null }>
+  >([]);
   const [collections, setCollections] = useState<Array<{ id: string; title: string; subtitle: string; image: string | null; slug: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -92,6 +94,10 @@ export default function CategoriesScreen() {
     void loadData();
   }, [loadData]);
 
+  const categoryByName = useMemo(
+    () => new Map(categories.map((item) => [item.name, item])),
+    [categories],
+  );
   const gridItems = useMemo(() => categories.map((item) => item.name), [categories]);
 
   const openSearch = () => {
@@ -167,7 +173,9 @@ export default function CategoriesScreen() {
                 scrollEnabled={false}
                 contentContainerStyle={styles.gridContainer}
                 columnWrapperStyle={styles.gridRow}
-                renderItem={({ item }) => (
+                renderItem={({ item }) => {
+                  const row = categoryByName.get(item);
+                  return (
                   <Pressable
                     style={({ pressed }) => [
                       styles.categoryTile,
@@ -181,13 +189,19 @@ export default function CategoriesScreen() {
                     }
                   >
                     <View style={[styles.categoryImageRing, TILE_SHADOW]}>
-                      <RemoteImage uri={categories.find((x) => x.name === item)?.image ?? undefined} fallbackTint="#d4c8ac" style={styles.categoryImage} />
+                      <RemoteImage
+                        uri={row?.image ?? undefined}
+                        placeholder="category"
+                        fallbackTint="#f5f0e6"
+                        style={styles.categoryImage}
+                      />
                     </View>
                     <Text style={styles.categoryLabel} numberOfLines={2}>
                       {formatCategoryLabel(item)}
                     </Text>
                   </Pressable>
-                )}
+                  );
+                }}
               />
             ) : null}
 

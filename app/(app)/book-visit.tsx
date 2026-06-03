@@ -29,6 +29,7 @@ import {
   boutiqueHasCoordinates,
   formatBoutiqueDistanceLine,
 } from '@/lib/utils/formatBoutiqueDistance';
+import { formatBoutiqueLocation } from '@/lib/utils/formatBoutiqueLocation';
 import { productPrimaryUri } from '@/lib/services/mock/imageUrls';
 import { createAppointment, getBoutiqueById, getProductById } from '@/services/api';
 import { createAppointmentBookedNotifications } from '@/lib/services/notifications';
@@ -184,20 +185,16 @@ export default function BookVisitScreen() {
 
         if (boutiqueResponse) {
           console.log('[BookStoreVisit] boutique API response', boutiqueResponse);
+          const formattedLocation = formatBoutiqueLocation({
+            location: boutiqueResponse.location ?? null,
+            full_address: boutiqueResponse.full_address ?? null,
+            address: boutiqueResponse.address ?? null,
+          });
           setProfile((prev) => ({
             id: boutiqueResponse.id,
             name: boutiqueResponse.name,
-            address:
-              boutiqueResponse.full_address ??
-              boutiqueResponse.address ??
-              boutiqueResponse.location ??
-              prev?.address ??
-              null,
-            location:
-              boutiqueResponse.location ??
-              boutiqueResponse.address ??
-              prev?.location ??
-              null,
+            address: formattedLocation,
+            location: formattedLocation,
             rating: boutiqueResponse.rating ?? prev?.rating ?? 0,
             distance:
               boutiqueResponse.distance != null &&
@@ -349,7 +346,7 @@ export default function BookVisitScreen() {
           boutiqueName: profile.name,
           date: dateFormatted,
           time: selectedTime,
-          address: profile.address ?? profile.location ?? 'Location unavailable',
+          address: locationLine,
           appointmentId: result.id,
         },
       });
@@ -399,8 +396,13 @@ export default function BookVisitScreen() {
     permission: locationPermission,
     userLocationGpsFailed: locationGpsFailed,
   });
-  const locationLine =
-    profile?.address ?? profile?.location ?? 'Location unavailable';
+  const locationLine = profile
+    ? formatBoutiqueLocation({
+        location: profile.location,
+        full_address: profile.address,
+        address: profile.address,
+      })
+    : 'Location unavailable';
 
   const visitHours = useMemo(() => {
     if (!profile?.openingTime || !profile?.closingTime) {
@@ -504,7 +506,8 @@ export default function BookVisitScreen() {
           <View style={styles.boutiqueRow}>
             <MaterialIcons name="star" size={14} color={GOLD} />
             <Text style={styles.boutiqueMuted}>
-              {Number(profile.rating ?? 0).toFixed(1)} · {distanceLine}
+              {Number(profile.rating ?? 0).toFixed(1)}
+              {distanceLine ? ` · ${distanceLine}` : ""}
             </Text>
           </View>
           <View style={styles.boutiqueRow}>

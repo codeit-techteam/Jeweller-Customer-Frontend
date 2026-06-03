@@ -1,4 +1,5 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
@@ -10,7 +11,14 @@ import {
   Text,
   View,
 } from 'react-native';
-import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import Animated, {
+  FadeIn,
+  FadeOut,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ShimmerBlock } from '@/components/loaders/ShimmerBlock';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
@@ -18,6 +26,7 @@ import { AppointmentSegmentedControl } from '@/lib/components/appointments/Appoi
 import { luxury } from '@/lib/components/appointments/appointmentTheme';
 import { AppointmentCard } from '@/lib/components/common/AppointmentCard';
 import type { Appointment } from '@/lib/services/mock/appointments';
+import { formatBoutiqueLocation } from '@/lib/utils/formatBoutiqueLocation';
 import { showPopup } from '@/lib/stores/popupStore';
 import { appointmentMatchesTab, type AppointmentTab } from '@/lib/utils/appointments';
 import {
@@ -41,7 +50,8 @@ const EMPTY_COPY: Record<
 > = {
   upcoming: {
     title: 'No Upcoming Appointments',
-    subtitle: 'Book a boutique visit for personalized jewellery consultations with master artisans.',
+    subtitle:
+      'Book a boutique visit and connect with expert jewellery consultants.',
     cta: 'Explore Boutiques',
     route: '/(app)/boutiques',
   },
@@ -69,7 +79,7 @@ function mapRowToAppointment(row: AppointmentApiRow): Appointment {
     time: row.time ?? '',
     status: row.status,
     badge: row.badge,
-    address: row.address,
+    address: formatBoutiqueLocation({ full_address: row.address, location: row.address }),
     image: row.image,
     startsAt: row.startsAt ?? null,
     consultationType: row.consultationType,
@@ -130,12 +140,26 @@ function TabEmptyState({
 }) {
   const copy = EMPTY_COPY[tab];
   return (
-    <Animated.View entering={FadeIn.duration(320)} exiting={FadeOut.duration(200)} style={styles.emptyLuxury}>
+    <Animated.View
+      entering={FadeIn.duration(280)}
+      exiting={FadeOut.duration(200)}
+      style={styles.emptyLuxury}
+    >
       <View style={styles.emptyIllustration}>
-        <View style={styles.emptyIconInner}>
-          <MaterialIcons name="event" size={36} color={luxury.goldDark} />
-        </View>
+        <LinearGradient
+          colors={['#FFFDF6', '#F5E6B8', 'rgba(232, 212, 138, 0.35)']}
+          start={{ x: 0.2, y: 0 }}
+          end={{ x: 0.8, y: 1 }}
+          style={styles.emptyGradientOrb}
+        />
+        <View style={styles.emptyRingOuter} />
         <View style={styles.emptyRing} />
+        <View style={styles.emptyIconInner}>
+          <MaterialIcons name="event-available" size={34} color={luxury.goldDark} />
+          <View style={styles.emptySparkle}>
+            <MaterialIcons name="diamond" size={14} color={luxury.gold} />
+          </View>
+        </View>
       </View>
       <Text style={styles.emptyLuxuryTitle}>{copy.title}</Text>
       <Text style={styles.emptyLuxurySub}>{copy.subtitle}</Text>
@@ -144,7 +168,15 @@ function TabEmptyState({
           style={({ pressed }) => [styles.exploreBtn, pressed && styles.btnPressed]}
           onPress={onCta}
         >
-          <Text style={styles.exploreBtnText}>{copy.cta}</Text>
+          <LinearGradient
+            colors={[luxury.goldFill, luxury.gold]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.exploreBtnGradient}
+          >
+            <Text style={styles.exploreBtnText}>{copy.cta}</Text>
+            <MaterialIcons name="arrow-forward" size={18} color={luxury.goldDark} />
+          </LinearGradient>
         </Pressable>
       ) : null}
     </Animated.View>
@@ -161,6 +193,11 @@ export default function AppointmentsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<AppointmentTab>('upcoming');
   const listKey = useRef(0);
+  const listOpacity = useSharedValue(1);
+
+  const listAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: listOpacity.value,
+  }));
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     const silent = opts?.silent ?? false;
@@ -200,10 +237,23 @@ export default function AppointmentsScreen() {
     { enabled: Boolean(userId) },
   );
 
-  const handleTabChange = useCallback((tab: AppointmentTab) => {
+  const applyTabChange = useCallback((tab: AppointmentTab) => {
     setActiveTab(tab);
     listKey.current += 1;
-  }, []);
+    listOpacity.value = withTiming(1, { duration: 280 });
+  }, [listOpacity]);
+
+  const handleTabChange = useCallback(
+    (tab: AppointmentTab) => {
+      if (tab === activeTab) return;
+      listOpacity.value = withTiming(0, { duration: 150 }, (finished) => {
+        if (finished) {
+          runOnJS(applyTabChange)(tab);
+        }
+      });
+    },
+    [activeTab, applyTabChange, listOpacity],
+  );
 
   const filteredAppointments = useMemo(
     () => appointments.filter((a) => appointmentMatchesTab(a, activeTab)),
@@ -303,24 +353,6 @@ export default function AppointmentsScreen() {
     });
   }, []);
 
-  const ListHeader = useMemo(
-    () => (
-      <View style={styles.headerBlock}>
-        <Text style={styles.heroTitle}>My Appointments</Text>
-        <Text style={styles.heroSubtitle}>
-          Manage your private viewings and personal consultations with our master jewelers.
-        </Text>
-        <AppointmentSegmentedControl
-          tabs={TABS}
-          activeTab={activeTab}
-          counts={tabCounts}
-          onChange={handleTabChange}
-        />
-      </View>
-    ),
-    [activeTab, handleTabChange, tabCounts],
-  );
-
   const errorBlock = useMemo(
     () => (
       <View style={styles.emptyWrap}>
@@ -364,59 +396,77 @@ export default function AppointmentsScreen() {
         <View style={styles.backSlot} />
       </View>
 
+      <View style={styles.pageHeader}>
+        <Text style={styles.heroTitle}>My Appointments</Text>
+        <Text style={styles.heroSubtitle}>
+          Manage your private viewings and consultations with master jewellers across our
+          partner boutiques.
+        </Text>
+        <View style={styles.filterWrap}>
+          <AppointmentSegmentedControl
+            tabs={TABS}
+            activeTab={activeTab}
+            counts={tabCounts}
+            onChange={handleTabChange}
+          />
+        </View>
+      </View>
+
       {loading && userId ? (
         <ScrollView
+          style={styles.listScroll}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           refreshControl={refreshControl}
         >
-          {ListHeader}
           {loadingBlock}
         </ScrollView>
       ) : (
-        <FlatList
-          key={`${activeTab}-${listKey.current}`}
-          data={filteredAppointments}
-          keyExtractor={(item) => item.id}
-          extraData={[filteredAppointments, activeTab, loading]}
-          refreshControl={refreshControl}
-          ListHeaderComponent={ListHeader}
-          ListEmptyComponent={
-            <View>
-              {error ? (
-                errorBlock
-              ) : !userId ? (
-                <View style={styles.emptyWrap}>
-                  <MaterialIcons name="lock-outline" size={40} color="#cbd5e1" />
-                  <Text style={styles.emptyTitle}>Sign in to continue</Text>
-                  <Text style={styles.emptySub}>
-                    Your appointments sync to your account when you are signed in.
-                  </Text>
-                </View>
-              ) : (
-                <TabEmptyState
-                  tab={activeTab}
-                  onCta={() => router.push('/(app)/boutiques')}
-                />
-              )}
-            </View>
-          }
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-          renderItem={({ item, index }) => (
-            <AppointmentCard
-              item={item}
-              index={index}
-              onPress={() => openDetails(item.id)}
-              onCancel={() => onCancel(item)}
-              onCallBoutique={() => onCall(item)}
-              onViewBoutique={() => openBoutique(item)}
-              onReschedule={() => bookAtBoutique(item)}
-              onBookAgain={() => bookAtBoutique(item)}
-            />
-          )}
-        />
+        <Animated.View style={[styles.listAnimatedWrap, listAnimatedStyle]}>
+          <FlatList
+            key={`${activeTab}-${listKey.current}`}
+            style={styles.listScroll}
+            data={filteredAppointments}
+            keyExtractor={(item) => item.id}
+            extraData={[filteredAppointments, activeTab, loading]}
+            refreshControl={refreshControl}
+            ListEmptyComponent={
+              <Animated.View entering={FadeIn.duration(280)} exiting={FadeOut.duration(180)}>
+                {error ? (
+                  errorBlock
+                ) : !userId ? (
+                  <View style={styles.emptyWrap}>
+                    <MaterialIcons name="lock-outline" size={40} color="#cbd5e1" />
+                    <Text style={styles.emptyTitle}>Sign in to continue</Text>
+                    <Text style={styles.emptySub}>
+                      Your appointments sync to your account when you are signed in.
+                    </Text>
+                  </View>
+                ) : (
+                  <TabEmptyState
+                    tab={activeTab}
+                    onCta={() => router.push('/(app)/boutiques')}
+                  />
+                )}
+              </Animated.View>
+            }
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+            renderItem={({ item, index }) => (
+              <AppointmentCard
+                item={item}
+                index={index}
+                onPress={() => openDetails(item.id)}
+                onCancel={() => onCancel(item)}
+                onCallBoutique={() => onCall(item)}
+                onViewBoutique={() => openBoutique(item)}
+                onReschedule={() => bookAtBoutique(item)}
+                onBookAgain={() => bookAtBoutique(item)}
+              />
+            )}
+          />
+        </Animated.View>
       )}
     </SafeAreaView>
   );
@@ -455,12 +505,16 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
     paddingBottom: spacing['2xl'],
     flexGrow: 1,
   },
-  headerBlock: {
-    paddingTop: spacing.sm,
-    marginBottom: spacing.md,
+  listAnimatedWrap: { flex: 1 },
+  listScroll: { flex: 1 },
+  pageHeader: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.md,
     width: '100%',
     alignSelf: 'stretch',
   },
@@ -474,8 +528,13 @@ const styles = StyleSheet.create({
   heroSubtitle: {
     fontSize: fontSizes.sm,
     color: luxury.textSecondary,
-    lineHeight: 21,
-    marginBottom: spacing.md,
+    lineHeight: 22,
+    marginBottom: spacing.lg,
+    maxWidth: 340,
+  },
+  filterWrap: {
+    width: '100%',
+    alignSelf: 'stretch',
   },
   skeletonWrap: { paddingBottom: spacing.md },
   emptyWrap: {
@@ -501,27 +560,62 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   emptyIllustration: {
-    width: 88,
-    height: 88,
+    width: 120,
+    height: 120,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  emptyGradientOrb: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 60,
+    opacity: 0.95,
+  },
+  emptyRingOuter: {
+    position: 'absolute',
+    width: 108,
+    height: 108,
+    borderRadius: 54,
+    borderWidth: 1,
+    borderColor: 'rgba(212, 175, 55, 0.2)',
   },
   emptyRing: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 44,
+    position: 'absolute',
+    width: 92,
+    height: 92,
+    borderRadius: 46,
     borderWidth: 2,
     borderColor: luxury.goldFill,
-    opacity: 0.5,
+    opacity: 0.55,
   },
   emptyIconInner: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 1,
+    shadowColor: luxury.gold,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    elevation: 5,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 255, 255, 0.8)',
+  },
+  emptySparkle: {
+    position: 'absolute',
+    top: -4,
+    right: -6,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: luxury.goldFill,
   },
   emptyLuxuryTitle: {
     fontSize: fontSizes.xl,
@@ -540,23 +634,30 @@ const styles = StyleSheet.create({
   },
   exploreBtn: {
     marginTop: spacing.xl,
-    paddingHorizontal: spacing['2xl'],
-    paddingVertical: spacing.md,
-    backgroundColor: luxury.goldFill,
     borderRadius: radius.lg,
+    overflow: 'hidden',
     shadowColor: luxury.gold,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    elevation: 6,
+  },
+  exploreBtnGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing['2xl'],
+    paddingVertical: spacing.md + 2,
+    borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.5)',
+    borderColor: 'rgba(255, 255, 255, 0.45)',
   },
   exploreBtnText: {
     color: luxury.goldDark,
     fontWeight: '800',
     fontSize: fontSizes.sm,
-    letterSpacing: 0.3,
+    letterSpacing: 0.35,
   },
   btnPressed: { opacity: 0.9, transform: [{ scale: 0.98 }] },
   emptyTitle: {

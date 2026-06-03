@@ -1,17 +1,41 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { useRouter } from 'expo-router';
-import React, { useCallback, useMemo } from 'react';
-import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  FlatList,
+  LayoutAnimation,
+  Platform,
+  Pressable,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  UIManager,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { NotificationItem } from '@/lib/components/common/NotificationItem';
-import type { AppNotification } from '@/lib/services/notifications';
+import { SwipeableNotificationRow } from '@/lib/components/common/SwipeableNotificationRow';
+import type { AppNotification, NotificationFilterTab } from '@/lib/services/notifications';
+import { matchesNotificationFilter, resolveNotificationRoute } from '@/lib/services/notifications';
 import { useNotificationsStore } from '@/lib/stores/notificationsStore';
 import { fontSizes, spacing } from '@/src/constants/theme';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 type Row =
   | { kind: 'section'; id: string; label: string; showMarkAll?: boolean }
   | { kind: 'item'; id: string; notification: AppNotification };
+
+const FILTER_TABS: { key: NotificationFilterTab; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'offers', label: 'Offers' },
+  { key: 'appointments', label: 'Appointments' },
+  { key: 'support', label: 'Support' },
+  { key: 'system', label: 'System' },
+];
 
 function relativeTime(dateIso: string): string {
   const ts = new Date(dateIso).getTime();
@@ -26,33 +50,44 @@ function relativeTime(dateIso: string): string {
   return `${days}d ago`;
 }
 
-function isToday(dateIso: string): boolean {
-  const d = new Date(dateIso);
-  const now = new Date();
-  return (
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate()
-  );
+function startOfDay(date: Date): number {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+}
+
+function sectionLabelForDate(dateIso: string): 'TODAY' | 'YESTERDAY' | 'EARLIER' {
+  const ts = new Date(dateIso).getTime();
+  const today = startOfDay(new Date());
+  const yesterday = today - 24 * 60 * 60 * 1000;
+  const day = startOfDay(new Date(dateIso));
+  if (day === today) return 'TODAY';
+  if (day === yesterday) return 'YESTERDAY';
+  return 'EARLIER';
 }
 
 function buildRows(items: AppNotification[]): Row[] {
-  const today = items.filter((i) => isToday(i.createdAt));
-  const earlier = items.filter((i) => !isToday(i.createdAt));
+  const sections: Array<'TODAY' | 'YESTERDAY' | 'EARLIER'> = ['TODAY', 'YESTERDAY', 'EARLIER'];
   const rows: Row[] = [];
-  if (today.length > 0) {
-    rows.push({ kind: 'section', id: 'sec-today', label: 'TODAY', showMarkAll: true });
-    today.forEach((i) => rows.push({ kind: 'item', id: i.id, notification: i }));
+
+  for (const label of sections) {
+    const bucket = items.filter((item) => sectionLabelForDate(item.createdAt) === label);
+    if (bucket.length === 0) continue;
+    rows.push({
+      kind: 'section',
+      id: `sec-${label.toLowerCase()}`,
+      label,
+      showMarkAll: label === 'TODAY',
+    });
+    bucket.forEach((notification) => {
+      rows.push({ kind: 'item', id: notification.id, notification });
+    });
   }
-  if (earlier.length > 0) {
-    rows.push({ kind: 'section', id: 'sec-earlier', label: 'EARLIER' });
-    earlier.forEach((i) => rows.push({ kind: 'item', id: i.id, notification: i }));
-  }
+
   return rows;
 }
 
 export default function NotificationsScreen() {
   const router = useRouter();
+  const [activeTab, setActiveTab] = useState<NotificationFilterTab>('all');
   const notifications = useNotificationsStore((s) => s.items);
   const loading = useNotificationsStore((s) => s.loading);
   const loadingMore = useNotificationsStore((s) => s.loadingMore);
@@ -63,12 +98,35 @@ export default function NotificationsScreen() {
   const loadMore = useNotificationsStore((s) => s.loadMore);
   const markReadStore = useNotificationsStore((s) => s.markRead);
   const markAllReadStore = useNotificationsStore((s) => s.markAllRead);
+  const removeStore = useNotificationsStore((s) => s.remove);
 
-  const rows = useMemo(() => buildRows(notifications), [notifications]);
+  useFocusEffect(
+    useCallback(() => {
+      if (loading || refreshing) return;
+      if (notifications.length === 0 || error) {
+        void refresh();
+      }
+    }, [error, loading, notifications.length, refresh, refreshing]),
+  );
 
-  const markRead = useCallback((id: string) => {
-    void markReadStore(id);
-  }, [markReadStore]);
+  const filtered = useMemo(
+    () => notifications.filter((item) => matchesNotificationFilter(item, activeTab)),
+    [notifications, activeTab],
+  );
+
+  const rows = useMemo(() => buildRows(filtered), [filtered]);
+
+  const changeTab = useCallback((tab: NotificationFilterTab) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setActiveTab(tab);
+  }, []);
+
+  const markRead = useCallback(
+    (id: string) => {
+      void markReadStore(id);
+    },
+    [markReadStore],
+  );
 
   const markAllTodayRead = useCallback(() => {
     void markAllReadStore();
@@ -76,41 +134,46 @@ export default function NotificationsScreen() {
 
   const openFromNotification = useCallback(
     (n: AppNotification) => {
-      markRead(n.id);
-      const data = n.data ?? {};
-      const route = typeof data.route === 'string' ? data.route : null;
-      const routeParams =
-        data.routeParams && typeof data.routeParams === 'object'
-          ? (data.routeParams as Record<string, string>)
-          : undefined;
-
+      void markReadStore(n.id);
+      const route = resolveNotificationRoute(n);
       if (route) {
-        router.push({ pathname: route as never, params: routeParams as never });
+        router.push({ pathname: route.pathname as never, params: route.params as never });
         return;
       }
-
-      const sourceEvent = typeof data.source_event === 'string' ? data.source_event : '';
-      if (n.type === 'order' || sourceEvent.includes('order')) {
-        router.push('/(app)/orders');
-      } else if (sourceEvent.includes('appointment') || sourceEvent.includes('book_visit')) {
-        router.push('/(app)/appointments');
-      } else if (sourceEvent.includes('offer') || sourceEvent.includes('collection')) {
-        router.push('/(app)/home');
-      }
+      router.push('/(app)/home');
     },
-    [markRead, router],
+    [markReadStore, router],
   );
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <Pressable accessibilityRole="button" hitSlop={12} onPress={() => router.back()} style={styles.headerIcon}>
+        <Pressable
+          accessibilityRole="button"
+          hitSlop={12}
+          onPress={() => router.back()}
+          style={styles.headerIcon}
+        >
           <MaterialIcons name="arrow-back" size={22} color="#0f172a" />
         </Pressable>
         <Text style={styles.headerTitle}>Notifications</Text>
-        <Pressable accessibilityRole="button" hitSlop={12} onPress={() => console.log('[Notifications] menu')} style={styles.headerIcon}>
-          <MaterialIcons name="more-vert" size={22} color="#0f172a" />
-        </Pressable>
+        <View style={styles.headerIcon} />
+      </View>
+
+      <View style={styles.tabsWrap}>
+        {FILTER_TABS.map((tab) => {
+          const active = activeTab === tab.key;
+          return (
+            <Pressable
+              key={tab.key}
+              accessibilityRole="button"
+              onPress={() => changeTab(tab.key)}
+              style={[styles.tabChip, active && styles.tabChipActive]}
+            >
+              <Text style={[styles.tabText, active && styles.tabTextActive]}>{tab.label}</Text>
+            </Pressable>
+          );
+        })}
       </View>
 
       {loading ? (
@@ -118,11 +181,20 @@ export default function NotificationsScreen() {
           <ActivityIndicator color="#1e40af" size="small" />
           <Text style={styles.emptySub}>Loading notifications...</Text>
         </View>
-      ) : notifications.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <View style={styles.emptyWrap}>
-          <MaterialIcons name="notifications-none" size={56} color="#cbd5e1" />
-          <Text style={styles.emptyTitle}>No notifications</Text>
-          <Text style={styles.emptySub}>You&apos;re all caught up. We&apos;ll notify you when something arrives.</Text>
+          <MaterialIcons name="notifications-none" size={72} color="#cbd5e1" />
+          <Text style={styles.emptyTitle}>
+            {error ? 'Could not load notifications' : 'No Notifications Yet'}
+          </Text>
+          <Text style={styles.emptySub}>
+            {error ?? "We'll notify you when something important happens."}
+          </Text>
+          {error ? (
+            <Pressable accessibilityRole="button" onPress={() => void refresh()} style={styles.retryBtn}>
+              <Text style={styles.retryText}>Try again</Text>
+            </Pressable>
+          ) : null}
         </View>
       ) : (
         <FlatList
@@ -154,23 +226,22 @@ export default function NotificationsScreen() {
                 </View>
               );
             }
+
             const n = item.notification;
             const actionLabel = n.type === 'order' ? 'Track Order' : undefined;
+
             return (
-              <NotificationItem
+              <SwipeableNotificationRow
                 item={{
                   ...n,
                   timeLabel: relativeTime(n.createdAt),
-                  imageUri:
-                    typeof n.data?.imageUri === 'string'
-                      ? n.data.imageUri
-                      : typeof n.data?.image === 'string'
-                        ? n.data.image
-                        : undefined,
+                  imageUri: n.imageUrl,
                   actionLabel,
                 }}
                 onPress={() => openFromNotification(n)}
                 onActionPress={actionLabel ? () => openFromNotification(n) : undefined}
+                onMarkRead={() => markRead(n.id)}
+                onDelete={() => void removeStore(n.id)}
               />
             );
           }}
@@ -182,7 +253,7 @@ export default function NotificationsScreen() {
                 </View>
               ) : null}
               {error ? <Text style={styles.footerError}>{error}</Text> : null}
-              {!hasMore && notifications.length > 0 ? (
+              {!hasMore && filtered.length > 0 ? (
                 <Text style={styles.footerEnd}>You&apos;ve reached the end of your notifications.</Text>
               ) : null}
             </>
@@ -218,6 +289,35 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.lg,
     fontWeight: '700',
     color: '#0f172a',
+  },
+  tabsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#f1f5f9',
+  },
+  tabChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  tabChipActive: {
+    backgroundColor: '#0f172a',
+    borderColor: '#0f172a',
+  },
+  tabText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748b',
+  },
+  tabTextActive: {
+    color: '#fff',
   },
   listContent: {
     paddingHorizontal: spacing.lg,
@@ -272,6 +372,18 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     textAlign: 'center',
     lineHeight: 20,
+  },
+  retryBtn: {
+    marginTop: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: 999,
+    backgroundColor: '#1e40af',
+  },
+  retryText: {
+    fontSize: fontSizes.sm,
+    fontWeight: '700',
+    color: '#fff',
   },
   footerLoader: {
     paddingVertical: spacing.md,

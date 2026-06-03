@@ -1,20 +1,29 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { useRouter } from "expo-router";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import * as ImagePicker from "expo-image-picker";
+import { useFocusEffect, useRouter } from "expo-router";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-    FlatList,
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  ActivityIndicator,
+  Animated,
+  FlatList,
+  Keyboard,
+  KeyboardAvoidingView,
+  Linking,
+  Modal,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { RemoteImage } from "@/lib/components/common/RemoteImage";
-import { NECKLACE_CATEGORY_ANCHOR } from "@/lib/services/mock/imageUrls";
+import type { SupportMessage } from "@/lib/services/supportChat";
+import { submitSupportRating, uploadSupportAttachment } from "@/lib/services/supportChat";
+import { useSupportChatStore } from "@/lib/stores/supportChatStore";
+import { useAuth } from "@/context/AuthContext";
 
 const HEADER_NAVY = "#0b1f3a";
 const BOT_BUBBLE = "#f1f1f1";
@@ -22,80 +31,215 @@ const USER_BUBBLE = "#0b1f3a";
 const USER_TEXT = "#fff";
 const BG = "#f6f7f9";
 
-/** Chat row — discriminated by `type` */
-export type Message =
-  | {
-      id: number;
-      sender: "user" | "bot";
-      type: "text";
-      text: string;
-      footer?: string;
-    }
-  | { id: number; sender: "bot"; type: "callback" }
-  | { id: number; sender: "bot"; type: "faq" }
-  | {
-      id: number;
-      sender: "bot";
-      type: "order_card";
-      orderId: string;
-      delivery: string;
-      status: string;
-      imageUri: string;
-    };
+const QUICK_CHIPS = [
+  "Track Order",
+  "Book Appointment",
+  "Talk To Expert",
+  "Find Boutique",
+  "Latest Offers",
+  "Gold Plans",
+];
 
-function nowFooter(support: boolean) {
-  const t = new Date().toLocaleTimeString("en-IN", {
+const WELCOME_ACTIONS = [
+  { emoji: "📦", label: "Track Order" },
+  { emoji: "📅", label: "Book Appointment" },
+  { emoji: "📞", label: "Request Callback" },
+  { emoji: "💰", label: "Gold Plans" },
+  { emoji: "🏬", label: "Find Boutique" },
+  { emoji: "👨‍💼", label: "Talk To Expert" },
+];
+
+function formatTime(iso: string) {
+  return new Date(iso).toLocaleTimeString("en-IN", {
     hour: "numeric",
     minute: "2-digit",
   });
-  return support ? `${t} • ATELIER INDIA SUPPORT` : `${t} • YOU`;
 }
 
-function nextId() {
-  return Date.now() + Math.floor(Math.random() * 1000);
+function formatDateLabel(iso: string) {
+  const d = new Date(iso);
+  const today = new Date();
+  if (d.toDateString() === today.toDateString()) return "Today";
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
+  return d.toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 }
 
-const INITIAL_MESSAGES: Message[] = [
-  {
-    id: 1,
-    sender: "bot",
-    type: "text",
-    text: "Hello — welcome to Luxe Co Support. I'm here to help with orders, boutique visits, and product questions.",
-    footer: "10:02 AM • ATELIER INDIA SUPPORT",
-  },
-  {
-    id: 2,
-    sender: "bot",
-    type: "faq",
-  },
-  {
-    id: 3,
-    sender: "user",
-    type: "text",
-    text: "I'd like to check on my recent order, please.",
-    footer: "10:05 AM • YOU",
-  },
-  {
-    id: 4,
-    sender: "bot",
-    type: "order_card",
-    orderId: "Order #ATC-IND-8821",
-    delivery: "Expected Delivery: Oct 24, 2023",
-    status: "IN TRANSIT",
-    imageUri: NECKLACE_CATEGORY_ANCHOR,
-  },
-];
+function ReadReceipt({ status }: { status: SupportMessage["deliveryStatus"] }) {
+  const color = status === "read" ? "#22c55e" : status === "delivered" ? "#94a3b8" : "#cbd5e1";
+  const marks = status === "sent" ? "✓" : "✓✓";
+  return <Text style={[styles.receipt, { color }]}>{marks}</Text>;
+}
+
+function TypingDots() {
+  const opacity = useRef(new Animated.Value(0.3)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 1, duration: 400, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.3, duration: 400, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [opacity]);
+  return (
+    <Animated.Text style={[styles.typingText, { opacity }]}>
+      GehnaHub Support is typing...
+    </Animated.Text>
+  );
+}
+
+function RatingModal({
+  visible,
+  onClose,
+  onSubmit,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onSubmit: (rating: number, feedback: string) => void;
+}) {
+  const [stars, setStars] = useState(0);
+  const [feedback, setFeedback] = useState("");
+  return (
+    <Modal visible={visible} transparent animationType="fade">
+      <View style={styles.ratingOverlay}>
+        <View style={styles.ratingCard}>
+          <Text style={styles.ratingTitle}>Rate your support experience</Text>
+          <View style={styles.starRow}>
+            {[1, 2, 3, 4, 5].map((n) => (
+              <Pressable key={n} onPress={() => setStars(n)} hitSlop={8}>
+                <Text style={styles.star}>{n <= stars ? "⭐" : "☆"}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <TextInput
+            style={styles.ratingInput}
+            placeholder="Optional feedback"
+            placeholderTextColor="#94a3b8"
+            value={feedback}
+            onChangeText={setFeedback}
+            multiline
+          />
+          <Pressable
+            style={[styles.ratingSubmit, stars < 1 && { opacity: 0.5 }]}
+            disabled={stars < 1}
+            onPress={() => {
+              onSubmit(stars, feedback);
+              setStars(0);
+              setFeedback("");
+            }}
+          >
+            <Text style={styles.ratingSubmitText}>Submit</Text>
+          </Pressable>
+          <Pressable onPress={onClose} style={styles.ratingSkip}>
+            <Text style={styles.ratingSkipText}>Skip</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+type ListItem =
+  | { kind: "date"; id: string; label: string }
+  | { kind: "message"; id: string; message: SupportMessage };
 
 export default function ChatScreen() {
   const router = useRouter();
-  const listRef = useRef<FlatList<Message>>(null);
+  const { user, isAuthenticated } = useAuth();
+  const listRef = useRef<FlatList<ListItem>>(null);
+  const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
+  const {
+    conversation,
+    messages,
+    loading,
+    sending,
+    error,
+    agentTyping,
+    initialize,
+    sendText,
+    sendAttachment,
+    notifyTyping,
+    startSync,
+    stopSync,
+    clear,
+  } = useSupportChatStore();
+
   const [input, setInput] = useState("");
-  /** Callback cards that already received confirmation */
-  const [callbackDone, setCallbackDone] = useState<Set<number>>(
-    () => new Set(),
+  const [ratingOpen, setRatingOpen] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const quickOpacity = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (!isAuthenticated || !user?.id) return;
+    void initialize(user.id, user.full_name);
+    return () => clear();
+  }, [isAuthenticated, user?.id, user?.full_name, initialize, clear]);
+
+  useFocusEffect(
+    useCallback(() => {
+      startSync();
+      return () => stopSync();
+    }, [startSync, stopSync]),
   );
+
+  useEffect(() => {
+    const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const showSub = Keyboard.addListener(showEvt, () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener(hideEvt, () => setKeyboardVisible(false));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  const showQuickActions = input.trim().length === 0 && !keyboardVisible;
+
+  useEffect(() => {
+    Animated.timing(quickOpacity, {
+      toValue: showQuickActions ? 1 : 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [showQuickActions, quickOpacity]);
+
+  useEffect(() => {
+    if (conversation?.status === "resolved") {
+      setRatingOpen(true);
+    }
+  }, [conversation?.status]);
+
+  const listItems = useMemo(() => {
+    const items: ListItem[] = [];
+    let lastDate = "";
+    for (const msg of messages) {
+      const label = formatDateLabel(msg.createdAt);
+      if (label !== lastDate) {
+        items.push({ kind: "date", id: `d-${msg.id}`, label });
+        lastDate = label;
+      }
+      items.push({ kind: "message", id: msg.id, message: msg });
+    }
+    return items;
+  }, [messages]);
+
+  const showWelcome = useMemo(() => {
+    const nonSystem = messages.filter((m) => m.senderType === "customer");
+    return nonSystem.length === 0;
+  }, [messages]);
+
+  const agentName = conversation?.assignedAgent?.name ?? "GehnaHub Support";
+  const agentOnline =
+    (conversation?.assignedAgent?.status ?? "online") === "online";
 
   const scrollToBottom = useCallback(() => {
     requestAnimationFrame(() => {
@@ -105,352 +249,314 @@ export default function ChatScreen() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages.length, scrollToBottom]);
+  }, [messages.length, agentTyping, scrollToBottom]);
 
-  const handleCallback = useCallback(
-    (callbackMessageId: number) => {
-      if (callbackDone.has(callbackMessageId)) return;
-      setCallbackDone((prev) => new Set(prev).add(callbackMessageId));
-      const confirm: Message = {
-        id: nextId(),
-        sender: "bot",
-        type: "text",
-        text: "Your callback request has been submitted. Our expert will contact you shortly.",
-        footer: nowFooter(true),
-      };
-      setMessages((prev) => [...prev, confirm]);
+  const handleInputChange = useCallback(
+    (text: string) => {
+      setInput(text);
+      notifyTyping(true);
+      if (typingTimer.current) clearTimeout(typingTimer.current);
+      typingTimer.current = setTimeout(() => notifyTyping(false), 1200);
     },
-    [callbackDone],
+    [notifyTyping],
   );
-
-  const sendFAQ = useCallback((topic: string) => {
-    const uid = nextId();
-    const bid = uid + 1;
-    const userMsg: Message = {
-      id: uid,
-      sender: "user",
-      type: "text",
-      text: topic,
-      footer: nowFooter(false),
-    };
-    const botMsg: Message = {
-      id: bid,
-      sender: "bot",
-      type: "text",
-      text: `Sure! Here's the information regarding ${topic}.`,
-      footer: nowFooter(true),
-    };
-    setMessages((prev) => [...prev, userMsg, botMsg]);
-  }, []);
-
-  const pushBotCallbackCard = useCallback(() => {
-    setMessages((prev) => [
-      ...prev,
-      { id: nextId(), sender: "bot", type: "callback" },
-    ]);
-  }, []);
 
   const handleSend = useCallback(() => {
     const t = input.trim();
     if (!t) return;
-
-    const uid = nextId();
-    const userMsg: Message = {
-      id: uid,
-      sender: "user",
-      type: "text",
-      text: t,
-      footer: nowFooter(false),
-    };
-
-    setMessages((prev) => [...prev, userMsg]);
+    notifyTyping(false);
     setInput("");
+    void sendText(t);
+  }, [input, notifyTyping, sendText]);
 
-    if (/talk\s+to\s+expert/i.test(t)) {
-      setTimeout(() => pushBotCallbackCard(), 350);
-      return;
+  const onChip = useCallback(
+    (label: string) => {
+      void sendText(label, { quickReply: true });
+    },
+    [sendText],
+  );
+
+  const pickAttachment = useCallback(async () => {
+    if (!user?.id) return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.85,
+    });
+    if (result.canceled || !result.assets[0]) return;
+    const asset = result.assets[0];
+    try {
+      const uploaded = await uploadSupportAttachment(
+        user.id,
+        asset.uri,
+        asset.mimeType ?? "image/jpeg",
+      );
+      await sendAttachment(uploaded.url, uploaded.messageType as "image" | "pdf");
+    } catch {
+      /* store sets error */
+    }
+  }, [user?.id, sendAttachment]);
+
+  const pickPdf = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const DocumentPicker = await import("expo-document-picker");
+      const result = await DocumentPicker.getDocumentAsync({
+        type: "application/pdf",
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+      const asset = result.assets[0];
+      const uploaded = await uploadSupportAttachment(
+        user.id,
+        asset.uri,
+        "application/pdf",
+      );
+      await sendAttachment(uploaded.url, "pdf", asset.name);
+    } catch {
+      /* store sets error */
+    }
+  }, [user?.id, sendAttachment]);
+
+  const renderMessage = useCallback((item: SupportMessage) => {
+    const isUser = item.senderType === "customer";
+    const isSystem = item.senderType === "system";
+
+    if (item.messageType === "callback_card") {
+      return (
+        <View style={styles.msgWrap}>
+          <View style={styles.callbackCard}>
+            <Text style={styles.callbackTitle}>Request a callback</Text>
+            <Pressable
+              style={styles.callbackBtn}
+              onPress={() => router.push("/(app)/(tabs)/profile")}
+            >
+              <Text style={styles.callbackBtnText}>OPEN PROFILE</Text>
+            </Pressable>
+          </View>
+        </View>
+      );
     }
 
-    setTimeout(() => {
-      const botMsg: Message = {
-        id: nextId(),
-        sender: "bot",
-        type: "text",
-        text: "Thanks! Our concierge team will assist you shortly.",
-        footer: nowFooter(true),
-      };
-      setMessages((prev) => [...prev, botMsg]);
-    }, 800);
-  }, [input, pushBotCallbackCard]);
+    if (item.attachmentUrl && item.messageType === "image") {
+      return (
+        <View style={[styles.msgWrap, isUser && styles.msgWrapUser]}>
+          <RemoteImage uri={item.attachmentUrl} style={styles.attachImg} />
+          {item.message ? (
+            <Text style={styles.attachCaption}>{item.message}</Text>
+          ) : null}
+        </View>
+      );
+    }
 
-  const onQuickAction = useCallback(
-    (label: string) => {
-      const uid = nextId();
-      const userMsg: Message = {
-        id: uid,
-        sender: "user",
-        type: "text",
-        text: label,
-        footer: nowFooter(false),
-      };
-      setMessages((prev) => [...prev, userMsg]);
+    if (item.attachmentUrl && item.messageType === "pdf") {
+      return (
+        <View style={[styles.msgWrap, isUser && styles.msgWrapUser]}>
+          <Pressable onPress={() => Linking.openURL(item.attachmentUrl!)}>
+            <Text style={styles.pdfLink}>📄 {item.message || "Document"}</Text>
+          </Pressable>
+        </View>
+      );
+    }
 
-      if (/talk\s+to\s+expert/i.test(label)) {
-        setTimeout(() => pushBotCallbackCard(), 350);
-        return;
-      }
-
-      setTimeout(() => {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: nextId(),
-            sender: "bot",
-            type: "text",
-            text: `We’ve noted “${label}”. A specialist will follow up with next steps.`,
-            footer: nowFooter(true),
-          },
-        ]);
-      }, 600);
-    },
-    [pushBotCallbackCard],
-  );
+    return (
+      <View style={[styles.msgWrap, isUser ? styles.msgWrapUser : styles.msgWrapBot]}>
+        <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleBot]}>
+          <Text style={[styles.bubbleText, isUser && styles.bubbleTextUser]}>
+            {item.message}
+          </Text>
+        </View>
+        <View style={[styles.metaRow, isUser && styles.metaRowUser]}>
+          <Text style={styles.meta}>
+            {formatTime(item.createdAt)}
+            {isSystem ? " • SYSTEM" : isUser ? " • YOU" : " • SUPPORT"}
+          </Text>
+          {isUser ? <ReadReceipt status={item.deliveryStatus} /> : null}
+        </View>
+      </View>
+    );
+  }, [router]);
 
   const renderItem = useCallback(
-    ({ item }: { item: Message }) => {
-      if (item.type === "order_card") {
+    ({ item }: { item: ListItem }) => {
+      if (item.kind === "date") {
         return (
-          <View style={styles.msgWrap}>
-            <View style={styles.orderCard}>
-              <RemoteImage
-                uri={item.imageUri}
-                style={styles.orderImg}
-                resizeMode="cover"
-              />
-              <View style={styles.orderBody}>
-                <View style={styles.orderTextCol}>
-                  <Text style={styles.orderId}>{item.orderId}</Text>
-                  <Text style={styles.orderDelivery}>{item.delivery}</Text>
-                </View>
-                <View style={styles.statusBadge}>
-                  <Text style={styles.statusBadgeText}>{item.status}</Text>
-                </View>
-              </View>
-            </View>
-            <Text style={styles.meta}>Just now • ATELIER INDIA SUPPORT</Text>
+          <View style={styles.dateSep}>
+            <Text style={styles.dateSepText}>{item.label}</Text>
           </View>
         );
       }
-
-      if (item.type === "callback") {
-        const done = callbackDone.has(item.id);
-        return (
-          <View style={styles.msgWrap}>
-            <View style={styles.callbackCard}>
-              <Text style={styles.callbackTitle}>
-                Would you like us to call you back?
-              </Text>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.callbackBtn,
-                  (done || pressed) && { opacity: done ? 0.65 : 0.9 },
-                ]}
-                onPress={() => handleCallback(item.id)}
-                disabled={done}
-              >
-                <Text style={styles.callbackBtnText}>REQUEST CALLBACK</Text>
-              </Pressable>
-              <Text style={styles.callbackHint}>
-                • Expert available in 2 mins
-              </Text>
-            </View>
-            <Text style={styles.meta}>Now • ATELIER INDIA SUPPORT</Text>
-          </View>
-        );
-      }
-
-      if (item.type === "faq") {
-        return (
-          <View style={styles.msgWrap}>
-            <Text style={styles.faqLabel}>Quick topics</Text>
-            <View style={styles.faqContainer}>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.faqBtn,
-                  pressed && { opacity: 0.88 },
-                ]}
-                onPress={() => sendFAQ("Track Order")}
-              >
-                <Text style={styles.faqBtnText}>Track Order</Text>
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.faqBtn,
-                  pressed && { opacity: 0.88 },
-                ]}
-                onPress={() => sendFAQ("Book Appointment")}
-              >
-                <Text style={styles.faqBtnText}>Book Appointment</Text>
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.faqBtn,
-                  pressed && { opacity: 0.88 },
-                ]}
-                onPress={() => sendFAQ("Gold Plans")}
-              >
-                <Text style={styles.faqBtnText}>Gold Plans</Text>
-              </Pressable>
-            </View>
-            <Text style={[styles.faqLabel, { marginTop: 12 }]}>Shortcuts</Text>
-            <View style={styles.quickRow}>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.quickPill,
-                  pressed && { opacity: 0.88 },
-                ]}
-                onPress={() => onQuickAction("Track my Order")}
-              >
-                <Text style={styles.quickPillText}>Track my Order</Text>
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.quickPill,
-                  pressed && { opacity: 0.88 },
-                ]}
-                onPress={() => onQuickAction("Book Boutique Visit")}
-              >
-                <Text style={styles.quickPillText}>Book Boutique Visit</Text>
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.quickPill,
-                  pressed && { opacity: 0.88 },
-                ]}
-                onPress={() => onQuickAction("Talk to Expert")}
-              >
-                <Text style={styles.quickPillText}>Talk to Expert</Text>
-              </Pressable>
-            </View>
-          </View>
-        );
-      }
-
-      if (item.type === "text") {
-        const isUser = item.sender === "user";
-        return (
-          <View
-            style={[
-              styles.msgWrap,
-              isUser ? styles.msgWrapUser : styles.msgWrapBot,
-            ]}
-          >
-            <View
-              style={[
-                styles.bubble,
-                isUser ? styles.bubbleUser : styles.bubbleBot,
-              ]}
-            >
-              <Text
-                style={[styles.bubbleText, isUser && styles.bubbleTextUser]}
-              >
-                {item.text}
-              </Text>
-            </View>
-            {item.footer ? (
-              <Text style={[styles.meta, isUser && styles.metaUser]}>
-                {item.footer}
-              </Text>
-            ) : null}
-          </View>
-        );
-      }
-
-      return null;
+      return renderMessage(item.message);
     },
-    [callbackDone, handleCallback, sendFAQ, onQuickAction],
+    [renderMessage],
   );
 
-  const keyExtractor = useCallback((item: Message) => String(item.id), []);
+  if (!isAuthenticated || !user) {
+    return (
+      <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
+        <View style={styles.emptyWrap}>
+          <MaterialIcons name="support-agent" size={48} color={HEADER_NAVY} />
+          <Text style={styles.emptyTitle}>Need Help?</Text>
+          <Text style={styles.emptySub}>
+            Sign in to start a conversation with GehnaHub Support.
+          </Text>
+          <Pressable
+            style={styles.startBtn}
+            onPress={() => router.push("/(auth)/login")}
+          >
+            <Text style={styles.startBtnText}>Sign in to chat</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
-    <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
+    <SafeAreaView style={styles.safe} edges={["top"]}>
+      <View style={styles.header}>
+          <Pressable hitSlop={12} onPress={() => router.back()}>
+            <MaterialIcons name="arrow-back-ios" size={22} color="#fff" />
+          </Pressable>
+          <View style={styles.headerCenter}>
+            <Text style={styles.headerTitle}>{agentName}</Text>
+            <Text style={styles.headerSub}>
+              {agentOnline ? "● Online" : "Away"} • {conversation?.ticketNumber ?? "—"}
+            </Text>
+          </View>
+          <Pressable hitSlop={12} onPress={() => router.push("/(app)/support-history")}>
+            <MaterialIcons name="history" size={22} color="#fff" />
+          </Pressable>
+      </View>
+
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
       >
-        <View style={styles.mainColumn}>
-          <View style={styles.header}>
+        {loading ? (
+          <View style={styles.centered}>
+            <ActivityIndicator color={HEADER_NAVY} />
+          </View>
+        ) : !conversation ? (
+          <View style={styles.centered}>
+            <Text style={styles.emptyTitle}>Need Help?</Text>
+            <Text style={styles.emptySub}>
+              Start a conversation with GehnaHub Support.
+            </Text>
             <Pressable
-              hitSlop={12}
-              onPress={() => router.back()}
-              accessibilityRole="button"
+              style={styles.startBtn}
+              disabled={starting}
+              onPress={async () => {
+                setStarting(true);
+                await initialize(user.id, user.full_name);
+                setStarting(false);
+              }}
             >
-              <MaterialIcons name="arrow-back-ios" size={22} color="#fff" />
-            </Pressable>
-            <View style={styles.headerCenter}>
-              <Text style={styles.headerTitle}>Luxe Co Support</Text>
-              <Text style={styles.headerSub}>CONCIERGE SERVICE</Text>
-            </View>
-            <Pressable
-              hitSlop={12}
-              onPress={() => {}}
-              accessibilityRole="button"
-            >
-              <MaterialIcons name="open-in-full" size={22} color="#fff" />
+              <Text style={styles.startBtnText}>
+                {starting ? "Starting..." : "Start Chat"}
+              </Text>
             </Pressable>
           </View>
-
-          <View style={styles.listWrap}>
+        ) : (
+          <View style={styles.chatColumn}>
             <FlatList
               ref={listRef}
-              data={messages}
-              keyExtractor={keyExtractor}
+              data={listItems}
+              keyExtractor={(item) => item.id}
               renderItem={renderItem}
-              contentContainerStyle={styles.listContent}
               style={styles.list}
-              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.listContent}
               onContentSizeChange={scrollToBottom}
               keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="interactive"
+              ListHeaderComponent={
+                showWelcome ? (
+                  <View style={styles.welcomeCard}>
+                    <Text style={styles.welcomeHi}>
+                      Hello {user.full_name.split(" ")[0]} 👋
+                    </Text>
+                    <Text style={styles.welcomeSub}>How can we help today?</Text>
+                    <View style={styles.welcomeGrid}>
+                      {WELCOME_ACTIONS.map((a) => (
+                        <Pressable
+                          key={a.label}
+                          style={styles.welcomeAction}
+                          onPress={() => onChip(a.label)}
+                        >
+                          <Text style={styles.welcomeEmoji}>{a.emoji}</Text>
+                          <Text style={styles.welcomeActionText}>{a.label}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  </View>
+                ) : null
+              }
+              ListFooterComponent={
+                agentTyping ? (
+                  <View style={styles.typingWrap}>
+                    <TypingDots />
+                  </View>
+                ) : null
+              }
             />
-          </View>
 
-          <View style={styles.inputSection}>
-            <View style={styles.inputBar}>
-              <View style={styles.inputPill}>
-                <TextInput
-                  style={styles.input}
-                  value={input}
-                  onChangeText={setInput}
-                  placeholder="Type your message..."
-                  placeholderTextColor="#94a3b8"
-                  multiline
-                  maxLength={2000}
-                />
-                <Pressable
-                  hitSlop={8}
-                  onPress={() => {}}
-                  accessibilityLabel="Attach"
-                >
-                  <MaterialIcons name="attach-file" size={22} color="#64748b" />
-                </Pressable>
+            {error ? <Text style={styles.errorBanner}>{error}</Text> : null}
+
+            <Animated.View
+              style={[styles.quickActionsWrap, { opacity: quickOpacity }]}
+              pointerEvents={showQuickActions ? "auto" : "none"}
+            >
+              <View style={styles.chipRow}>
+                {QUICK_CHIPS.map((chip) => (
+                  <Pressable key={chip} style={styles.chip} onPress={() => onChip(chip)}>
+                    <Text style={styles.chipText}>{chip}</Text>
+                  </Pressable>
+                ))}
               </View>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.sendBtn,
-                  pressed && { opacity: 0.9 },
-                ]}
-                onPress={handleSend}
-                accessibilityRole="button"
-                accessibilityLabel="Send message"
-              >
-                <MaterialIcons name="send" size={20} color="#fff" />
-              </Pressable>
-            </View>
+            </Animated.View>
+
+            <SafeAreaView edges={["bottom"]} style={styles.footerSafe}>
+              <View style={styles.inputSection}>
+                <View style={styles.inputBar}>
+                  <View style={styles.inputPill}>
+                    <TextInput
+                      style={styles.input}
+                      value={input}
+                      onChangeText={handleInputChange}
+                      placeholder="Type your message..."
+                      placeholderTextColor="#94a3b8"
+                      multiline
+                      maxLength={2000}
+                    />
+                    <Pressable hitSlop={8} onPress={pickAttachment}>
+                      <MaterialIcons name="image" size={22} color="#64748b" />
+                    </Pressable>
+                    <Pressable hitSlop={8} onPress={pickPdf}>
+                      <MaterialIcons name="attach-file" size={22} color="#64748b" />
+                    </Pressable>
+                  </View>
+                  <Pressable
+                    style={[styles.sendBtn, sending && { opacity: 0.6 }]}
+                    onPress={handleSend}
+                    disabled={sending}
+                  >
+                    <MaterialIcons name="send" size={20} color="#fff" />
+                  </Pressable>
+                </View>
+              </View>
+            </SafeAreaView>
           </View>
-        </View>
+        )}
       </KeyboardAvoidingView>
+
+      <RatingModal
+        visible={ratingOpen}
+        onClose={() => setRatingOpen(false)}
+        onSubmit={async (rating, feedback) => {
+          if (!conversation || !user) return;
+          await submitSupportRating(user.id, conversation.id, rating, feedback);
+          setRatingOpen(false);
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -458,203 +564,75 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: BG },
   flex: { flex: 1 },
-  mainColumn: {
-    flex: 1,
-    justifyContent: "space-between",
-    position: "relative",
-  },
-  listWrap: {
-    flex: 1,
-    minHeight: 0,
-  },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
     paddingHorizontal: 12,
     paddingVertical: 12,
     backgroundColor: HEADER_NAVY,
   },
   headerCenter: { flex: 1, alignItems: "center" },
-  headerTitle: { fontSize: 18, fontWeight: "800", color: "#fff" },
-  headerSub: {
-    fontSize: 11,
-    color: "rgba(255,255,255,0.85)",
-    letterSpacing: 1.2,
-    marginTop: 2,
-  },
-  list: { flex: 1, backgroundColor: BG },
-  listContent: {
-    paddingHorizontal: 14,
-    paddingTop: 14,
-    paddingBottom: 100,
-  },
-  msgWrap: { marginBottom: 14, maxWidth: "100%" },
-  msgWrapBot: { alignSelf: "stretch" },
+  headerTitle: { fontSize: 17, fontWeight: "800", color: "#fff" },
+  headerSub: { fontSize: 11, color: "rgba(255,255,255,0.85)", marginTop: 2 },
+  chatColumn: { flex: 1, minHeight: 0 },
+  list: { flex: 1 },
+  listContent: { paddingHorizontal: 14, paddingTop: 14, paddingBottom: 12, flexGrow: 1 },
+  quickActionsWrap: { paddingHorizontal: 12, paddingBottom: 4 },
+  footerSafe: { backgroundColor: "#fff", borderTopWidth: 1, borderTopColor: "#e8eaef" },
+  centered: { flex: 1, justifyContent: "center", alignItems: "center" },
+  msgWrap: { marginBottom: 12, maxWidth: "88%" },
+  msgWrapBot: { alignSelf: "flex-start" },
   msgWrapUser: { alignSelf: "flex-end", alignItems: "flex-end" },
-  bubble: {
-    maxWidth: "88%",
-    borderRadius: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  bubbleBot: {
-    alignSelf: "flex-start",
-    backgroundColor: BOT_BUBBLE,
-  },
-  bubbleUser: {
-    alignSelf: "flex-end",
-    backgroundColor: USER_BUBBLE,
-  },
+  bubble: { borderRadius: 18, paddingHorizontal: 14, paddingVertical: 10 },
+  bubbleBot: { backgroundColor: BOT_BUBBLE },
+  bubbleUser: { backgroundColor: USER_BUBBLE },
   bubbleText: { fontSize: 14, lineHeight: 20, color: "#1e293b" },
   bubbleTextUser: { color: USER_TEXT },
-  meta: {
-    fontSize: 10,
-    color: "#94a3b8",
-    marginTop: 4,
-    letterSpacing: 0.3,
-    textTransform: "uppercase",
-  },
-  metaUser: { alignSelf: "flex-end", textAlign: "right" },
-  callbackCard: {
-    alignSelf: "flex-start",
-    maxWidth: "92%",
-    backgroundColor: "#fff",
-    padding: 16,
-    borderRadius: 16,
-    marginVertical: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#e8eaef",
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-  },
-  callbackTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#0f172a",
-    marginBottom: 12,
-  },
-  callbackBtn: {
-    backgroundColor: HEADER_NAVY,
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  callbackBtnText: {
-    color: "#fff",
-    fontSize: 12,
-    fontWeight: "800",
-    letterSpacing: 0.6,
-  },
-  callbackHint: { fontSize: 12, color: "#64748b" },
-  faqLabel: {
+  metaRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4 },
+  metaRowUser: { alignSelf: "flex-end" },
+  meta: { fontSize: 10, color: "#94a3b8", textTransform: "uppercase" },
+  receipt: { fontSize: 10, color: "#64748b" },
+  dateSep: { alignItems: "center", marginVertical: 12 },
+  dateSepText: {
     fontSize: 11,
-    fontWeight: "700",
-    color: "#64748b",
-    marginBottom: 8,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
+    color: "#94a3b8",
+    backgroundColor: "#e2e8f0",
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 10,
+    overflow: "hidden",
   },
-  faqContainer: { gap: 8, marginBottom: 4 },
-  faqBtn: {
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: HEADER_NAVY,
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-  },
-  faqBtnText: { fontSize: 13, fontWeight: "700", color: HEADER_NAVY },
-  quickRow: {
+  chipRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
-    marginTop: 8,
-    marginBottom: 8,
   },
-  quickPill: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+  chip: {
     borderRadius: 999,
     borderWidth: 1,
     borderColor: HEADER_NAVY,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     backgroundColor: "#fff",
   },
-  quickPillText: { fontSize: 12, fontWeight: "700", color: HEADER_NAVY },
-  orderCard: {
-    borderRadius: 16,
-    overflow: "hidden",
-    backgroundColor: "#fff",
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#e8eaef",
-    maxWidth: "100%",
-  },
-  orderImg: { width: "100%", height: 140 },
-  orderBody: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: 12,
-    gap: 8,
-  },
-  orderTextCol: { flex: 1, minWidth: 0 },
-  orderId: { fontSize: 14, fontWeight: "800", color: "#0f172a" },
-  orderDelivery: { fontSize: 12, color: "#64748b", marginTop: 4 },
-  statusBadge: {
-    backgroundColor: "#e2e8f0",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  statusBadgeText: {
-    fontSize: 9,
-    fontWeight: "800",
-    color: "#475569",
-    letterSpacing: 0.5,
-  },
+  chipText: { fontSize: 12, fontWeight: "700", color: HEADER_NAVY },
   inputSection: {
-    position: "absolute",
-    bottom: 20,
-    left: 16,
-    right: 16,
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: "#eee",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     backgroundColor: "#fff",
-    borderRadius: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 4,
   },
-  inputBar: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    gap: 10,
-  },
+  inputBar: { flexDirection: "row", alignItems: "flex-end", gap: 10 },
   inputPill: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#f1f5f9",
     borderRadius: 24,
-    paddingLeft: 16,
-    paddingRight: 10,
-    paddingVertical: 8,
+    paddingLeft: 14,
+    paddingRight: 8,
     minHeight: 46,
   },
-  input: {
-    flex: 1,
-    fontSize: 14,
-    color: "#0f172a",
-    maxHeight: 100,
-    paddingVertical: 4,
-  },
+  input: { flex: 1, fontSize: 14, color: "#0f172a", maxHeight: 100 },
   sendBtn: {
     width: 46,
     height: 46,
@@ -663,4 +641,94 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  welcomeCard: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "#e8eaef",
+  },
+  welcomeHi: { fontSize: 18, fontWeight: "800", color: HEADER_NAVY },
+  welcomeSub: { fontSize: 14, color: "#64748b", marginTop: 4, marginBottom: 12 },
+  welcomeGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  welcomeAction: {
+    width: "48%",
+    backgroundColor: "#f8fafc",
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+  },
+  welcomeEmoji: { fontSize: 18 },
+  welcomeActionText: { fontSize: 12, fontWeight: "700", color: HEADER_NAVY, marginTop: 4 },
+  typingWrap: { paddingVertical: 8, paddingHorizontal: 4 },
+  typingText: { fontSize: 12, color: "#64748b", fontStyle: "italic" },
+  attachImg: { width: 220, height: 160, borderRadius: 12 },
+  attachCaption: { fontSize: 12, color: "#64748b", marginTop: 4 },
+  pdfLink: { fontSize: 14, fontWeight: "700", color: HEADER_NAVY },
+  callbackCard: {
+    backgroundColor: "#fff",
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "#e8eaef",
+  },
+  callbackTitle: { fontSize: 14, fontWeight: "600", marginBottom: 10 },
+  callbackBtn: {
+    backgroundColor: HEADER_NAVY,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  callbackBtnText: { color: "#fff", fontWeight: "800", fontSize: 12 },
+  emptyWrap: { flex: 1, justifyContent: "center", alignItems: "center", padding: 24 },
+  emptyTitle: { fontSize: 20, fontWeight: "800", color: HEADER_NAVY, marginTop: 12 },
+  emptySub: { fontSize: 14, color: "#64748b", textAlign: "center", marginTop: 8 },
+  startBtn: {
+    marginTop: 20,
+    backgroundColor: HEADER_NAVY,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderRadius: 12,
+  },
+  startBtnText: { color: "#fff", fontWeight: "800" },
+  errorBanner: {
+    textAlign: "center",
+    color: "#b91c1c",
+    fontSize: 12,
+    padding: 8,
+  },
+  ratingOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    padding: 24,
+  },
+  ratingCard: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 20,
+  },
+  ratingTitle: { fontSize: 17, fontWeight: "800", color: HEADER_NAVY, marginBottom: 12 },
+  starRow: { flexDirection: "row", justifyContent: "center", gap: 8, marginBottom: 12 },
+  star: { fontSize: 28 },
+  ratingInput: {
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    borderRadius: 12,
+    padding: 12,
+    minHeight: 72,
+    marginBottom: 12,
+    fontSize: 14,
+  },
+  ratingSubmit: {
+    backgroundColor: HEADER_NAVY,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  ratingSubmitText: { color: "#fff", fontWeight: "800" },
+  ratingSkip: { alignItems: "center", marginTop: 10 },
+  ratingSkipText: { color: "#64748b", fontSize: 13 },
 });

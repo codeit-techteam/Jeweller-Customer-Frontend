@@ -102,14 +102,18 @@ export function SavedBoutiqueCard({
         <Text style={styles.metaDot}> • </Text>
         <View style={styles.metaItem}>
           <MaterialIcons name="place" size={16} color={PIN_COLOR} style={styles.metaIcon} />
-          <Text style={styles.metaText}>
-            {formatBoutiqueDistanceLine({
-              distanceKm: item.distanceKm,
-              locationLoading,
-              hasBoutiqueCoords: boutiqueHasCoordinates(item),
-              permission: locationPermission,
-              userLocationGpsFailed,
-            })}
+          <Text style={styles.metaText} numberOfLines={1}>
+            {item.location}
+            {(() => {
+              const distanceLine = formatBoutiqueDistanceLine({
+                distanceKm: item.distanceKm,
+                locationLoading,
+                hasBoutiqueCoords: boutiqueHasCoordinates(item),
+                permission: locationPermission,
+                userLocationGpsFailed,
+              });
+              return distanceLine ? ` • ${distanceLine}` : "";
+            })()}
           </Text>
         </View>
       </View>
@@ -129,7 +133,12 @@ export function SavedBoutiqueCard({
       <View style={styles.imageRow}>
         {images.map((uri, i) => (
           <View key={`${uri}-${i}`} style={styles.imageWrap}>
-            <RemoteImage uri={uri} fallbackTint="#e8e4dc" style={StyleSheet.absoluteFillObject} />
+            <RemoteImage
+              uri={uri}
+              fallbackTint="#e8e4dc"
+              placeholder="boutique-cover"
+              style={StyleSheet.absoluteFillObject}
+            />
           </View>
         ))}
       </View>

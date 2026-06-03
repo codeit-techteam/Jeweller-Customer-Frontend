@@ -4,6 +4,7 @@ import {
   getBoutiqueHoursStatus,
   normalizeWorkingDays,
 } from '@/lib/boutiques/boutiqueUi';
+import { formatBoutiqueLocation } from '@/lib/utils/formatBoutiqueLocation';
 import type { SavedBoutique } from '@/lib/services/mock/savedBoutiques';
 import {
   getSavedBoutiques,
@@ -24,7 +25,11 @@ function mapSavedBoutiqueFromApi(row: SavedBoutiqueApiRow): SavedBoutique {
     image: row.image,
     rating: row.rating,
     reviews: row.reviews,
-    location: row.location,
+    location: formatBoutiqueLocation({
+      location: row.location,
+      full_address: row.full_address,
+      address: row.full_address,
+    }),
     full_address: row.full_address,
     distanceKm: row.distanceKm,
     latitude: row.latitude,

@@ -22,7 +22,12 @@ export function BoutiqueCard({ profile }: Props) {
       <View style={[styles.logoRing, { borderColor: "#fff" }]}>
         <View style={[styles.logoInner, { backgroundColor: profile.logoTint }]}>
           {profile.logoUrl ? (
-            <RemoteImage uri={profile.logoUrl} style={styles.logoImage} />
+            <RemoteImage
+              uri={profile.logoUrl}
+              placeholder="boutique-logo"
+              fallbackTint="#e8e4dc"
+              style={styles.logoImage}
+            />
           ) : (
             <>
               <MaterialIcons name="diamond" size={24} color={GOLD} />

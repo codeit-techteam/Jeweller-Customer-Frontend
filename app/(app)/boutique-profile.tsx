@@ -361,7 +361,7 @@ export default function BoutiqueProfileScreen() {
       <View style={styles.body}>
         <BoutiqueHeader
           onBack={() => router.back()}
-          shareMessage={`${profile.name} — The Atelier`}
+          shareMessage={`${profile.name} — GehnaHub`}
         />
 
         <ScrollView
@@ -393,6 +393,7 @@ export default function BoutiqueProfileScreen() {
                   <RemoteImage
                     uri={item.uri}
                     fallbackTint={item.tint}
+                    placeholder="boutique-cover"
                     style={{ width: SCREEN_W, height: heroHeight }}
                   />
                 </Pressable>

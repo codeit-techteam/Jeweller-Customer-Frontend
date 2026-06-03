@@ -299,7 +299,8 @@ export default function SearchScreen() {
             title: row.title,
             imageUri:
               row.image?.trim() ||
-              categoryImageUri(row.title.toUpperCase()),
+              categoryImageUri(row.title.toUpperCase()) ||
+              "",
             categoryParam: slug,
             collectionSlug: slug,
             lineSubtitle:
@@ -319,9 +320,7 @@ export default function SearchScreen() {
           id: row.id,
           label: row.name,
           categoryParam: row.name,
-          imageUri:
-            row.image?.trim() ||
-            categoryImageUri(row.name.toUpperCase()),
+          imageUri: row.image?.trim() ?? "",
         })),
       );
     } else {
@@ -336,7 +335,8 @@ export default function SearchScreen() {
           subtitle: row.subtitle?.trim() || "Curated picks",
           imageUri:
             row.image?.trim() ||
-            categoryImageUri(row.title.toUpperCase()),
+            categoryImageUri(row.title.toUpperCase()) ||
+            "",
           collectionSlug: row.collectionSlug,
           productIds: row.productIds,
         })),

@@ -22,6 +22,7 @@ import { fontSizes, spacing } from '@/src/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { useAuthGuard } from '@/src/hooks/useAuthGuard';
+import { useGuestLogout } from '@/src/hooks/useGuestLogout';
 import { ProfileSkeletonLoader } from '@/components/loaders';
 import { useNotificationsStore } from '@/lib/stores/notificationsStore';
 
@@ -55,7 +56,8 @@ function LockedProfileCard({ icon, title, subtitle, onPress }: LockedCardProps) 
 
 export default function ProfileTabScreen() {
   const router = useRouter();
-  const { user, loading, logout, uploadProfileImage, isGuest, isAuthenticated, hydrate } = useAuth();
+  const { user, loading, uploadProfileImage, isGuest, isAuthenticated, hydrate } = useAuth();
+  const performGuestLogout = useGuestLogout();
   const unreadNotificationsCount = useNotificationsStore((s) => s.unreadCount);
   const refreshNotifications = useNotificationsStore((s) => s.refresh);
   const requireAuth = useAuthGuard();
@@ -98,6 +100,10 @@ export default function ProfileTabScreen() {
     router.push('/(auth)/login');
   }, [router]);
 
+  const onCreateAccountPress = useCallback(() => {
+    router.push('/(auth)/create-account');
+  }, [router]);
+
   const onEditPhoto = useCallback(async () => {
     if (!user || uploadingImage) return;
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -125,9 +131,8 @@ export default function ProfileTabScreen() {
 
   const onConfirmLogout = useCallback(async () => {
     setLogoutModalVisible(false);
-    await logout();
-    router.replace('/(app)/home');
-  }, [logout, router]);
+    await performGuestLogout();
+  }, [performGuestLogout]);
 
   const guardRoute = useCallback(
     (pathname: string) => {
@@ -180,9 +185,9 @@ export default function ProfileTabScreen() {
               </Pressable>
             ) : null}
           </View>
-          <Text style={styles.name}>{userDisplay.name}</Text>
           {isAuthenticated ? (
             <>
+              <Text style={styles.name}>{userDisplay.name}</Text>
               <Text style={styles.phone}>{userDisplay.phone}</Text>
               <Text style={styles.phone}>{userDisplay.email}</Text>
               <View style={styles.memberBadge}>
@@ -191,16 +196,29 @@ export default function ProfileTabScreen() {
               </View>
             </>
           ) : (
-            <>
-              <View style={[styles.memberBadge, styles.guestBadge]}>
-                <MaterialIcons name="visibility" size={14} color={GOLD} />
-                <Text style={[styles.memberText, styles.guestBadgeText]}>Browsing as Guest</Text>
-              </View>
-              <Pressable style={styles.loginBtn} onPress={onLoginPress}>
+            <View style={styles.guestWelcomeBlock}>
+              <Text style={styles.guestWelcomeTitle}>Welcome to GehnaHub</Text>
+              <Text style={styles.guestWelcomeBody}>
+                Sign in to book appointments, save boutiques, and receive exclusive offers.
+              </Text>
+              <Pressable
+                style={[styles.guestActionBtnBase, styles.loginBtn]}
+                onPress={onLoginPress}
+              >
                 <MaterialIcons name="login" size={18} color="#fff" />
-                <Text style={styles.loginBtnText}>Login / Sign Up</Text>
+                <Text style={styles.loginBtnText}>Login</Text>
               </Pressable>
-            </>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.guestActionBtnBase,
+                  styles.createAccountBtn,
+                  pressed && styles.createAccountBtnPressed,
+                ]}
+                onPress={onCreateAccountPress}
+              >
+                <Text style={styles.createAccountBtnText}>Create Account</Text>
+              </Pressable>
+            </View>
           )}
         </View>
 
@@ -256,6 +274,11 @@ export default function ProfileTabScreen() {
                 badgeCount={unreadNotificationsCount}
                 onPress={() => router.push('/(app)/notifications')}
               />
+              <ProfileMenuItem
+                icon="tune"
+                title="Notification Settings"
+                onPress={() => router.push('/(app)/notification-settings')}
+              />
             </View>
 
             <Text style={styles.sectionEyebrow}>ACCOUNT ACTIONS</Text>
@@ -281,7 +304,7 @@ export default function ProfileTabScreen() {
           </>
         )}
 
-        <Text style={styles.version}>Luxe Jewellery v2.4.1</Text>
+        <Text style={styles.version}>GehnaHub v2.4.1</Text>
         <View style={styles.footerLinks}>
           <Pressable onPress={() => console.log('privacy')}>
             <Text style={styles.footerLink}>PRIVACY</Text>
@@ -396,20 +419,64 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
   },
   guestBadgeText: { color: GOLD },
-  loginBtn: {
+  guestWelcomeBlock: {
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.sm,
+  },
+  guestWelcomeTitle: {
+    fontSize: fontSizes.xl,
+    fontWeight: '800',
+    color: NAVY,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  guestWelcomeBody: {
+    fontSize: fontSizes.sm,
+    color: MUTED,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: spacing.lg,
+  },
+  guestActionBtnBase: {
+    width: '100%',
+    maxWidth: 280,
+    minHeight: 48,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    marginTop: spacing.lg,
-    backgroundColor: NAVY,
+    justifyContent: 'center',
     paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
+    paddingVertical: 14,
     borderRadius: 999,
+  },
+  loginBtn: {
+    backgroundColor: NAVY,
+    gap: spacing.sm,
+    marginBottom: spacing.md,
   },
   loginBtnText: {
     color: '#fff',
     fontSize: fontSizes.md,
     fontWeight: '700',
+    lineHeight: 20,
+    includeFontPadding: false,
+  },
+  createAccountBtn: {
+    borderWidth: 1.5,
+    borderColor: NAVY,
+    backgroundColor: '#fff',
+  },
+  createAccountBtnPressed: {
+    opacity: 0.9,
+    backgroundColor: 'rgba(10,31,68,0.04)',
+  },
+  createAccountBtnText: {
+    color: NAVY,
+    fontSize: fontSizes.md,
+    fontWeight: '700',
+    lineHeight: 20,
+    textAlign: 'center',
+    includeFontPadding: false,
   },
   menuBlock: { marginBottom: spacing.lg },
   lockedCard: {

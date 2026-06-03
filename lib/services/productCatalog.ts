@@ -36,7 +36,7 @@ export type CatalogProduct = {
   boutiqueName: string | null;
   /** Rating of the boutique this product is offered at (0-5). */
   boutiqueRating: number | null;
-  /** Whether the linked boutique is verified by Luxe & Co. */
+  /** Whether the linked boutique is verified by GehnaHub. */
   boutiqueVerified: boolean;
   /** Normalised lower-case for filtering. */
   gender: string;

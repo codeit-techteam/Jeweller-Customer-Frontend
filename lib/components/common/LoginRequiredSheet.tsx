@@ -37,7 +37,7 @@ export function LoginRequiredSheet() {
   const sheetRef = useRef<BottomSheetModal>(null);
   const visible = useAuthGuardStore((s) => s.visible);
   const closeLoginModal = useAuthGuardStore((s) => s.closeLoginModal);
-  const snapPoints = useMemo(() => ['42%'], []);
+  const snapPoints = useMemo(() => ['48%'], []);
   const backdrop = useCallback(renderBackdrop, []);
 
   useEffect(() => {
@@ -58,6 +58,11 @@ export function LoginRequiredSheet() {
   const onLogin = useCallback(() => {
     closeLoginModal();
     router.push('/(auth)/login');
+  }, [closeLoginModal, router]);
+
+  const onCreateAccount = useCallback(() => {
+    closeLoginModal();
+    router.push('/(auth)/create-account');
   }, [closeLoginModal, router]);
 
   const onMaybeLater = useCallback(() => {
@@ -85,16 +90,21 @@ export function LoginRequiredSheet() {
 
         <Text style={styles.title}>Login Required</Text>
         <Text style={styles.description}>
-          Please login to continue and save your activity across devices.
+          Create an account or sign in to continue.
         </Text>
 
         <Pressable style={styles.primaryBtn} onPress={onLogin}>
-          <MaterialIcons name="phone-iphone" size={20} color="#fff" />
-          <Text style={styles.primaryBtnText}>Continue with Mobile Number</Text>
+          <MaterialIcons name="login" size={20} color="#fff" />
+          <Text style={styles.primaryBtnText}>Login</Text>
         </Pressable>
 
-        <Pressable style={styles.secondaryBtn} onPress={onMaybeLater}>
-          <Text style={styles.secondaryBtnText}>Maybe Later</Text>
+        <Pressable style={styles.secondaryOutlineBtn} onPress={onCreateAccount}>
+          <MaterialIcons name="person-add-alt-1" size={20} color={NAVY} />
+          <Text style={styles.secondaryOutlineBtnText}>Create Account</Text>
+        </Pressable>
+
+        <Pressable style={styles.tertiaryBtn} onPress={onMaybeLater}>
+          <Text style={styles.tertiaryBtnText}>Maybe Later</Text>
         </Pressable>
       </BottomSheetView>
     </BottomSheetModal>
@@ -175,11 +185,29 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.md,
     fontWeight: '700',
   },
-  secondaryBtn: {
+  secondaryOutlineBtn: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: '#fff',
+    paddingVertical: 16,
+    borderRadius: 999,
+    borderWidth: 1.5,
+    borderColor: NAVY,
+    marginBottom: spacing.md,
+  },
+  secondaryOutlineBtnText: {
+    color: NAVY,
+    fontSize: fontSizes.md,
+    fontWeight: '700',
+  },
+  tertiaryBtn: {
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
   },
-  secondaryBtnText: {
+  tertiaryBtnText: {
     color: GOLD,
     fontSize: fontSizes.md,
     fontWeight: '600',

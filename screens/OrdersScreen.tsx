@@ -62,7 +62,7 @@ export default function OrdersScreen() {
           </Pressable>
         )}
         ListHeaderComponent={
-          <Text style={styles.intro}>Track and manage your Luxe jewellery purchases.</Text>
+          <Text style={styles.intro}>Track and manage your GehnaHub jewellery purchases.</Text>
         }
       />
     </SafeAreaView>

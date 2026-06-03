@@ -2,25 +2,40 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { addDays, format, isToday, parseISO } from 'date-fns';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  Alert,
+  Keyboard,
+  KeyboardAvoidingView,
+  LayoutChangeEvent,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { getBoutiqueHoursStatus, normalizeWorkingDays } from '@/lib/boutiques/boutiqueUi';
+import {
+  getBoutiqueHoursStatus,
+  normalizeWorkingDays,
+  resolveCoverImage,
+} from '@/lib/boutiques/boutiqueUi';
 import { BoutiqueStatusBadge } from '@/lib/components/common/BoutiqueStatusBadge';
 import { RemoteImage } from '@/lib/components/common/RemoteImage';
-import { getBoutiqueProfileForId } from '@/lib/services/mock/boutiques';
 import { createAppointment, getBoutiqueById } from '@/services/api';
 import { createAppointmentBookedNotifications } from '@/lib/services/notifications';
-import { boutiqueListingCoverImage } from '@/lib/services/mock/imageUrls';
-import { fontSizes, radius, spacing } from '@/src/constants/theme';
+import { fontSizes, spacing } from '@/src/constants/theme';
 import { BoutiqueSkeletonLoader, ButtonLoader } from '@/components/loaders';
 import { EmptyState } from '@/lib/components/common/EmptyState';
 import { useAuth } from '@/context/AuthContext';
+import { ProtectedRouteGate } from '@/lib/components/common/ProtectedRouteGate';
 
 const NAVY = '#0f172a';
 const GOLD = '#b8860b';
 const MUTED = '#64748b';
-const UUID_V4_LIKE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /** Converts a display time like "02:30 PM" → "14:30" (HH:MM 24-hr). */
 function toHHMM(displayTime: string): string {
@@ -36,15 +51,29 @@ function toHHMM(displayTime: string): string {
 
 const TIME_SLOTS = ['10:00 AM', '11:30 AM', '01:00 PM', '02:30 PM', '04:00 PM', '05:30 PM'];
 
+type FieldKey = 'notes' | 'name' | 'phone';
+
 function paramStr(raw: string | string[] | undefined): string | undefined {
   if (raw == null) return undefined;
   return Array.isArray(raw) ? raw[0] : raw;
 }
 
 export default function BookAppointmentScreen() {
+  return (
+    <ProtectedRouteGate routePath="/(app)/book-appointment">
+      <BookAppointmentScreenInner />
+    </ProtectedRouteGate>
+  );
+}
+
+function BookAppointmentScreenInner() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const boutiqueId = paramStr(useLocalSearchParams<{ boutiqueId?: string | string[] }>().boutiqueId);
+  const scrollRef = useRef<InstanceType<typeof KeyboardAwareScrollView> | null>(null);
+  const fieldY = useRef<Partial<Record<FieldKey, number>>>({});
+
   const [profile, setProfile] = useState<{
     id: string;
     name: string;
@@ -62,37 +91,10 @@ export default function BookAppointmentScreen() {
 
   useEffect(() => {
     let mounted = true;
-    console.log('Received boutiqueId:', boutiqueId);
     if (!boutiqueId) {
       setProfile(null);
       setLoading(false);
       return;
-    }
-
-    if (!UUID_V4_LIKE.test(boutiqueId)) {
-      const mock = getBoutiqueProfileForId(boutiqueId);
-      if (mock) {
-        const hours = getBoutiqueHoursStatus(
-          mock.openingTime,
-          mock.closingTime,
-          mock.workingDays ?? [],
-        );
-        setProfile({
-          id: mock.id,
-          name: mock.name,
-          rating: mock.rating,
-          reviewCount: mock.reviewCount,
-          contactAddress: mock.contactAddress,
-          banners: [{ uri: mock.banners[0]?.uri ?? boutiqueListingCoverImage(mock.id) }],
-          openingTime: mock.openingTime ?? null,
-          closingTime: mock.closingTime ?? null,
-          workingDays: mock.workingDays ?? [],
-          openNow: hours.openNow,
-          statusSubLabel: hours.statusSubLabel,
-        });
-        setLoading(false);
-        return;
-      }
     }
 
     const fetchBoutique = async () => {
@@ -100,7 +102,6 @@ export default function BookAppointmentScreen() {
         const row = await getBoutiqueById(boutiqueId);
         if (!mounted) return;
         if (!row) {
-          console.log('Boutique not found');
           setProfile(null);
           return;
         }
@@ -112,15 +113,14 @@ export default function BookAppointmentScreen() {
           rating: row.rating ?? 0,
           reviewCount: Math.max(0, Math.floor(Number(row.reviews_count ?? 0))),
           contactAddress: `${row.location ?? 'Delhi'}, India`,
-          banners: [{ uri: row.cover_image ?? row.image ?? boutiqueListingCoverImage(row.id) }],
+          banners: [{ uri: resolveCoverImage(row) ?? undefined }],
           openingTime: row.opening_time ?? null,
           closingTime: row.closing_time ?? null,
           workingDays: wd,
           openNow: hours.openNow,
           statusSubLabel: hours.statusSubLabel,
         });
-      } catch (error) {
-        console.log('Boutique not found');
+      } catch {
         if (mounted) setProfile(null);
       } finally {
         if (mounted) setLoading(false);
@@ -141,6 +141,7 @@ export default function BookAppointmentScreen() {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [showErrors, setShowErrors] = useState(false);
 
   const dateOptions = useMemo(() => {
     return Array.from({ length: 7 }, (_, i) => {
@@ -154,11 +155,21 @@ export default function BookAppointmentScreen() {
     return format(d, 'MMMM yyyy');
   }, [dateOptions]);
 
+  const validation = useMemo(
+    () => ({
+      date: !selectedDateKey,
+      time: !selectedTime,
+      name: name.trim().length === 0,
+      phone: phone.replace(/\s/g, '').length < 8,
+    }),
+    [selectedDateKey, selectedTime, name, phone],
+  );
+
   const canConfirm =
-    Boolean(selectedDateKey) &&
-    Boolean(selectedTime) &&
-    name.trim().length > 0 &&
-    phone.replace(/\s/g, '').length >= 8;
+    !validation.date &&
+    !validation.time &&
+    !validation.name &&
+    !validation.phone;
 
   const onConfirm = useCallback(async () => {
     if (!canConfirm || !selectedDateKey || !selectedTime || !profile) return;
@@ -204,11 +215,53 @@ export default function BookAppointmentScreen() {
     } finally {
       setSubmitting(false);
     }
-  }, [canConfirm, selectedDateKey, selectedTime, profile, appointmentType, notes, name, phone, router, submitting]);
+  }, [
+    canConfirm,
+    selectedDateKey,
+    selectedTime,
+    profile,
+    appointmentType,
+    notes,
+    name,
+    phone,
+    router,
+    submitting,
+    user?.id,
+  ]);
+
+  const onPressConfirm = useCallback(() => {
+    if (!canConfirm) {
+      setShowErrors(true);
+      return;
+    }
+    void onConfirm();
+  }, [canConfirm, onConfirm]);
 
   const editPhone = useCallback(() => {
     phoneRef.current?.focus();
   }, []);
+
+  const onFieldLayout = useCallback(
+    (key: FieldKey) => (e: LayoutChangeEvent) => {
+      fieldY.current[key] = e.nativeEvent.layout.y;
+    },
+    [],
+  );
+
+  const scrollToField = useCallback((key: FieldKey) => {
+    const y = fieldY.current[key];
+    if (y == null) return;
+    scrollRef.current?.scrollToPosition(0, Math.max(0, y - 40), true);
+  }, []);
+
+  const onInputFocus = useCallback(
+    (key: FieldKey) => () => {
+      requestAnimationFrame(() => scrollToField(key));
+    },
+    [scrollToField],
+  );
+
+  const keyboardVerticalOffset = Platform.OS === 'ios' ? insets.top + 56 : 0;
 
   if (loading) {
     return (
@@ -254,152 +307,230 @@ export default function BookAppointmentScreen() {
         </Pressable>
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>Book an Appointment</Text>
-          <Text style={styles.headerGold}>LUXURY DIAMONDS BOUTIQUE</Text>
+          <Text style={styles.headerGold}>{profile.name}</Text>
         </View>
         <View style={styles.headerIcon} />
       </View>
 
-      <ScrollView
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scroll}
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={keyboardVerticalOffset}
       >
-        <View style={styles.boutiqueCard}>
-          <RemoteImage uri={profile.banners[0]?.uri} style={styles.boutiqueThumb} />
-          <View style={styles.boutiqueMeta}>
-            <View style={styles.boutiqueTitleRow}>
-              <Text style={styles.boutiqueName} numberOfLines={2}>
-                {profile.name}
+        <KeyboardAwareScrollView
+          ref={scrollRef}
+          style={styles.flex}
+          contentContainerStyle={styles.scrollContent}
+          enableOnAndroid
+          enableAutomaticScroll
+          enableResetScrollToCoords={false}
+          extraScrollHeight={Platform.OS === 'ios' ? 80 : 100}
+          extraHeight={Platform.OS === 'android' ? 24 : 16}
+          keyboardOpeningTime={250}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          showsVerticalScrollIndicator={false}
+          nestedScrollEnabled
+          bounces
+        >
+          <View style={styles.boutiqueCard}>
+            <RemoteImage
+              uri={profile.banners[0]?.uri}
+              placeholder="boutique-cover"
+              fallbackTint="#e8e4dc"
+              style={styles.boutiqueThumb}
+            />
+            <View style={styles.boutiqueMeta}>
+              <View style={styles.boutiqueTitleRow}>
+                <Text style={styles.boutiqueName} numberOfLines={2}>
+                  {profile.name}
+                </Text>
+                {profile.openingTime && profile.closingTime ? (
+                  <BoutiqueStatusBadge
+                    isOpen={profile.openNow}
+                    subLabel={profile.statusSubLabel}
+                    opensAt={profile.openingTime}
+                    closesAt={profile.closingTime}
+                    variant="compact"
+                  />
+                ) : null}
+              </View>
+              <Text style={styles.boutiqueRating}>
+                ★ {profile.rating.toFixed(1)} ({profile.reviewCount} reviews)
               </Text>
-              {profile.openingTime && profile.closingTime ? (
-                <BoutiqueStatusBadge
-                  isOpen={profile.openNow}
-                  subLabel={profile.statusSubLabel}
-                  opensAt={profile.openingTime}
-                  closesAt={profile.closingTime}
-                  variant="compact"
-                />
-              ) : null}
-            </View>
-            <Text style={styles.boutiqueRating}>
-              ★ {profile.rating.toFixed(1)} ({profile.reviewCount} reviews)
-            </Text>
-            <View style={styles.locRow}>
-              <MaterialIcons name="location-on" size={14} color={MUTED} />
-              <Text style={styles.boutiqueLoc}>{profile.contactAddress}</Text>
+              <View style={styles.locRow}>
+                <MaterialIcons name="location-on" size={14} color={MUTED} />
+                <Text style={styles.boutiqueLoc}>{profile.contactAddress}</Text>
+              </View>
             </View>
           </View>
-        </View>
 
-        <View style={styles.sectionHead}>
-          <Text style={styles.sectionTitle}>SELECT DATE</Text>
-          <Text style={styles.monthGold}>{monthYear}</Text>
-        </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateRow}>
-          {dateOptions.map(({ date, key }) => {
-            const selected = selectedDateKey === key;
-            const top = isToday(date) ? 'TODAY' : format(date, 'EEE').toUpperCase();
-            const num = format(date, 'd');
-            const mon = format(date, 'MMM').toUpperCase();
-            return (
-              <Pressable key={key} onPress={() => setSelectedDateKey(key)} style={[styles.dateChip, selected && styles.dateChipOn]}>
-                <Text style={[styles.dateTop, selected && styles.dateOn]}>{top}</Text>
-                <Text style={[styles.dateNum, selected && styles.dateOn]}>{num}</Text>
-                <Text style={[styles.dateMon, selected && styles.dateOn]}>{mon}</Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-
-        <Text style={[styles.sectionTitle, styles.sectionTitlePad]}>SELECT TIME SLOT</Text>
-        <View style={styles.slotGrid}>
-          {TIME_SLOTS.map((t) => {
-            const on = selectedTime === t;
-            return (
-              <Pressable key={t} onPress={() => setSelectedTime(t)} style={[styles.slotBtn, on && styles.slotBtnOn]}>
-                <Text style={[styles.slotText, on && styles.slotTextOn]}>{t}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        <Text style={[styles.sectionTitle, styles.sectionTitlePad]}>APPOINTMENT TYPE</Text>
-        <View style={styles.typeRow}>
-          <Pressable
-            onPress={() => setAppointmentType('instore')}
-            style={[styles.typeCard, appointmentType === 'instore' && styles.typeCardOn]}
-          >
-            <MaterialIcons name="storefront" size={32} color={NAVY} />
-            <Text style={styles.typeLabel}>In-store Visit</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => setAppointmentType('call')}
-            style={[styles.typeCard, appointmentType === 'call' && styles.typeCardOn]}
-          >
-            <MaterialIcons name="call" size={32} color={NAVY} />
-            <Text style={styles.typeLabel}>Call Us</Text>
-          </Pressable>
-        </View>
-
-        <Text style={styles.notesLabel}>ADD NOTES (optional)</Text>
-        <TextInput
-          value={notes}
-          onChangeText={setNotes}
-          placeholder="Looking for bridal necklace, solitaire engagement rings..."
-          placeholderTextColor="#9ca3af"
-          style={styles.notesInput}
-          multiline
-        />
-
-        <Text style={styles.inputLabel}>FULL NAME</Text>
-        <TextInput
-          value={name}
-          onChangeText={setName}
-          placeholder="Your full name"
-          placeholderTextColor="#9ca3af"
-          style={styles.textInput}
-          autoCapitalize="words"
-        />
-
-        <Text style={[styles.sectionTitle, styles.sectionTitlePad]}>CONTACT DETAILS</Text>
-        <View style={styles.contactCard}>
-          <View style={styles.phoneIconWrap}>
-            <MaterialIcons name="smartphone" size={22} color={NAVY} />
+          <View style={styles.sectionHead}>
+            <Text style={styles.sectionTitle}>SELECT DATE</Text>
+            <Text style={styles.monthGold}>{monthYear}</Text>
           </View>
-          <View style={styles.contactMid}>
-            <Text style={styles.contactLabel}>MOBILE NUMBER</Text>
+          {showErrors && validation.date ? (
+            <Text style={styles.inlineError}>Please select a date</Text>
+          ) : null}
+          <ScrollView
+            horizontal
+            nestedScrollEnabled
+            showsHorizontalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={styles.dateRow}
+          >
+            {dateOptions.map(({ date, key }) => {
+              const selected = selectedDateKey === key;
+              const top = isToday(date) ? 'TODAY' : format(date, 'EEE').toUpperCase();
+              const num = format(date, 'd');
+              const mon = format(date, 'MMM').toUpperCase();
+              return (
+                <Pressable
+                  key={key}
+                  onPress={() => {
+                    setSelectedDateKey(key);
+                    setShowErrors(false);
+                  }}
+                  style={[styles.dateChip, selected && styles.dateChipOn]}
+                >
+                  <Text style={[styles.dateTop, selected && styles.dateOn]}>{top}</Text>
+                  <Text style={[styles.dateNum, selected && styles.dateOn]}>{num}</Text>
+                  <Text style={[styles.dateMon, selected && styles.dateOn]}>{mon}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+
+          <Text style={[styles.sectionTitle, styles.sectionSpaced]}>SELECT TIME SLOT</Text>
+          {showErrors && validation.time ? (
+            <Text style={styles.inlineError}>Please select a time slot</Text>
+          ) : null}
+          <View style={styles.slotGrid}>
+            {TIME_SLOTS.map((t) => {
+              const on = selectedTime === t;
+              return (
+                <Pressable
+                  key={t}
+                  onPress={() => {
+                    setSelectedTime(t);
+                    setShowErrors(false);
+                  }}
+                  style={[styles.slotBtn, on && styles.slotBtnOn]}
+                >
+                  <Text style={[styles.slotText, on && styles.slotTextOn]}>{t}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <Text style={[styles.sectionTitle, styles.sectionSpaced]}>APPOINTMENT TYPE</Text>
+          <View style={styles.typeRow}>
+            <Pressable
+              onPress={() => setAppointmentType('instore')}
+              style={[styles.typeCard, appointmentType === 'instore' && styles.typeCardOn]}
+            >
+              <MaterialIcons name="storefront" size={32} color={NAVY} />
+              <Text style={styles.typeLabel}>In-store Visit</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setAppointmentType('call')}
+              style={[styles.typeCard, appointmentType === 'call' && styles.typeCardOn]}
+            >
+              <MaterialIcons name="call" size={32} color={NAVY} />
+              <Text style={styles.typeLabel}>Call Us</Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.fieldBlock} onLayout={onFieldLayout('notes')}>
+            <Text style={styles.fieldLabel}>ADD NOTES (optional)</Text>
             <TextInput
-              ref={phoneRef}
-              value={phone}
-              onChangeText={setPhone}
-              placeholder="+91 98765 43210"
+              value={notes}
+              onChangeText={setNotes}
+              onFocus={onInputFocus('notes')}
+              placeholder="Looking for bridal necklace, solitaire engagement rings..."
               placeholderTextColor="#9ca3af"
-              style={styles.phoneInput}
-              keyboardType="phone-pad"
+              style={styles.notesInput}
+              multiline
+              scrollEnabled
+              blurOnSubmit
             />
           </View>
-          <Pressable onPress={editPhone} hitSlop={8}>
-            <Text style={styles.editGold}>EDIT</Text>
-          </Pressable>
+
+          <View style={styles.fieldBlock} onLayout={onFieldLayout('name')}>
+            <Text style={styles.fieldLabel}>FULL NAME</Text>
+            {showErrors && validation.name ? (
+              <Text style={styles.inlineError}>Enter your full name</Text>
+            ) : null}
+            <TextInput
+              value={name}
+              onChangeText={(t) => {
+                setName(t);
+                if (t.trim()) setShowErrors(false);
+              }}
+              onFocus={onInputFocus('name')}
+              placeholder="Your full name"
+              placeholderTextColor="#9ca3af"
+              style={[styles.textInput, showErrors && validation.name && styles.textInputError]}
+              autoCapitalize="words"
+              returnKeyType="next"
+            />
+          </View>
+
+          <View style={styles.fieldBlock}>
+            <Text style={[styles.sectionTitle, styles.contactSectionTitle]}>CONTACT DETAILS</Text>
+            {showErrors && validation.phone ? (
+              <Text style={styles.inlineError}>Enter a valid mobile number</Text>
+            ) : null}
+            <View
+              style={[styles.contactCard, showErrors && validation.phone && styles.contactCardError]}
+              onLayout={onFieldLayout('phone')}
+            >
+              <View style={styles.phoneIconWrap}>
+                <MaterialIcons name="smartphone" size={22} color={NAVY} />
+              </View>
+              <View style={styles.contactMid}>
+                <Text style={styles.contactLabel}>MOBILE NUMBER</Text>
+                <TextInput
+                  ref={phoneRef}
+                  value={phone}
+                  onChangeText={(t) => {
+                    setPhone(t);
+                    if (t.replace(/\s/g, '').length >= 8) setShowErrors(false);
+                  }}
+                  onFocus={onInputFocus('phone')}
+                  placeholder="+91 98765 43210"
+                  placeholderTextColor="#9ca3af"
+                  style={styles.phoneInput}
+                  keyboardType="phone-pad"
+                  returnKeyType="done"
+                  onSubmitEditing={Keyboard.dismiss}
+                />
+              </View>
+              <Pressable onPress={editPhone} hitSlop={8}>
+                <Text style={styles.editGold}>EDIT</Text>
+              </Pressable>
+            </View>
+          </View>
+        </KeyboardAwareScrollView>
+
+        <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
+          <Text style={styles.footerDisclaimer}>Free consultation • No-commitment required</Text>
+          <ButtonLoader
+            label="CONFIRM APPOINTMENT"
+            loading={submitting}
+            disabled={submitting}
+            onPress={onPressConfirm}
+            style={[styles.confirmBtn, !canConfirm && !submitting && styles.confirmDisabled]}
+          />
         </View>
-
-        <ButtonLoader
-          label="CONFIRM APPOINTMENT"
-          loading={submitting}
-          disabled={!canConfirm || submitting}
-          onPress={onConfirm}
-          style={[styles.confirmBtn, !canConfirm && styles.confirmDisabled]}
-        />
-        <Text style={styles.footerDisclaimer}>Free consultation • No-commitment required</Text>
-
-        <View style={{ height: spacing.xl }} />
-      </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#f8f9fb' },
+  flex: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -419,14 +550,18 @@ const styles = StyleSheet.create({
     color: GOLD,
     letterSpacing: 1,
   },
-  scroll: { padding: spacing.lg, paddingBottom: spacing['2xl'] },
+  scrollContent: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xl,
+  },
   boutiqueCard: {
     flexDirection: 'row',
     backgroundColor: '#fff',
     borderRadius: 16,
     padding: spacing.md,
     gap: spacing.md,
-    marginBottom: spacing.xl,
+    marginBottom: spacing.lg,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: '#e8eaed',
     shadowColor: '#000',
@@ -446,11 +581,17 @@ const styles = StyleSheet.create({
   boutiqueRating: { marginTop: 4, fontSize: fontSizes.xs, color: MUTED },
   locRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 4, marginTop: 6 },
   boutiqueLoc: { flex: 1, fontSize: fontSizes.xs, color: MUTED, lineHeight: 18 },
-  sectionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.md },
+  sectionHead: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
   sectionTitle: { fontSize: 11, fontWeight: '800', color: NAVY, letterSpacing: 0.6 },
-  sectionTitlePad: { marginTop: spacing.xl, marginBottom: spacing.md },
+  sectionSpaced: { marginTop: spacing.xl, marginBottom: spacing.md },
+  contactSectionTitle: { marginTop: 0, marginBottom: spacing.md },
   monthGold: { fontSize: fontSizes.sm, fontWeight: '700', color: GOLD },
-  dateRow: { gap: spacing.sm, paddingBottom: spacing.sm },
+  dateRow: { gap: spacing.sm, paddingBottom: spacing.md },
   dateChip: {
     width: 64,
     paddingVertical: spacing.sm,
@@ -492,29 +633,37 @@ const styles = StyleSheet.create({
   },
   typeCardOn: { borderWidth: 2, borderColor: NAVY, backgroundColor: '#eff6ff' },
   typeLabel: { fontSize: fontSizes.sm, fontWeight: '700', color: NAVY, textAlign: 'center' },
-  notesLabel: { marginTop: spacing.xl, marginBottom: spacing.sm, fontSize: fontSizes.sm, fontWeight: '600', color: MUTED },
+  fieldBlock: { marginTop: spacing.xl },
+  fieldLabel: {
+    marginBottom: spacing.sm,
+    fontSize: fontSizes.sm,
+    fontWeight: '600',
+    color: MUTED,
+  },
   notesInput: {
     borderWidth: 1,
     borderColor: '#e2e8f0',
     borderRadius: 14,
     padding: spacing.md,
     minHeight: 100,
+    maxHeight: 180,
     fontSize: fontSizes.sm,
     color: NAVY,
     backgroundColor: '#fff',
     textAlignVertical: 'top',
+    lineHeight: 20,
   },
-  inputLabel: { marginTop: spacing.lg, marginBottom: spacing.sm, fontSize: 11, fontWeight: '800', color: NAVY, letterSpacing: 0.5 },
   textInput: {
     borderWidth: 1,
     borderColor: '#e2e8f0',
     borderRadius: 12,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingVertical: Platform.select({ ios: 14, android: 12 }),
     fontSize: fontSizes.sm,
     color: NAVY,
     backgroundColor: '#fff',
   },
+  textInputError: { borderColor: '#dc2626' },
   contactCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -524,8 +673,8 @@ const styles = StyleSheet.create({
     borderColor: '#e2e8f0',
     padding: spacing.md,
     gap: spacing.md,
-    marginBottom: spacing.xl,
   },
+  contactCardError: { borderColor: '#dc2626' },
   phoneIconWrap: {
     width: 44,
     height: 44,
@@ -534,24 +683,50 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  contactMid: { flex: 1 },
+  contactMid: { flex: 1, minWidth: 0 },
   contactLabel: { fontSize: 9, fontWeight: '800', color: MUTED, letterSpacing: 0.5 },
-  phoneInput: { marginTop: 4, fontSize: fontSizes.md, fontWeight: '600', color: NAVY, padding: 0 },
+  phoneInput: {
+    marginTop: 4,
+    fontSize: fontSizes.md,
+    fontWeight: '600',
+    color: NAVY,
+    padding: 0,
+    minHeight: 24,
+  },
   editGold: { fontSize: fontSizes.sm, fontWeight: '800', color: GOLD },
-  confirmBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+  inlineError: {
+    fontSize: fontSizes.xs,
+    color: '#dc2626',
+    marginBottom: spacing.sm,
+    minHeight: 16,
+  },
+  footer: {
+    backgroundColor: '#fff',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#e2e8f0',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
     gap: spacing.sm,
+    minHeight: 88,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0f172a',
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.08,
+        shadowRadius: 12,
+      },
+      android: { elevation: 16 },
+      default: {},
+    }),
+  },
+  confirmBtn: {
+    minHeight: 52,
     backgroundColor: NAVY,
-    paddingVertical: spacing.lg,
     borderRadius: 999,
-    marginTop: spacing.md,
+    marginTop: 0,
   },
   confirmDisabled: { opacity: 0.45 },
-  confirmText: { fontSize: fontSizes.sm, fontWeight: '800', color: '#fff', letterSpacing: 0.5 },
-  footerDisclaimer: { textAlign: 'center', marginTop: spacing.md, fontSize: 10, color: '#94a3b8' },
+  footerDisclaimer: { textAlign: 'center', fontSize: 10, color: '#94a3b8' },
   topRow: { flexDirection: 'row', padding: spacing.md },
   empty: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  emptyText: { color: MUTED },
 });

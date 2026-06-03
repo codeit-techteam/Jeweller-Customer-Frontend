@@ -223,7 +223,7 @@ export default function OccasionsScreen() {
         <View style={styles.serviceCard}>
           <Text style={styles.serviceTitle}>Bespoke Design Service</Text>
           <Text style={styles.serviceBody}>
-            Let our master craftsmen bring your dream occasion jewellery to life with our exclusive atelier service.
+            Let our master craftsmen bring your dream occasion jewellery to life with our exclusive GehnaHub concierge service.
           </Text>
           <View style={styles.serviceBtn}>
             <Text style={styles.serviceBtnText}>Consult an Expert</Text>

@@ -2,8 +2,11 @@ import { Stack } from 'expo-router';
 import React, { useEffect } from 'react';
 
 import { useAuth } from '@/context/AuthContext';
+import { usePushNotificationsBootstrap } from '@/hooks/usePushNotifications';
 import { useNotificationsStore } from '@/lib/stores/notificationsStore';
 import { useRecentlyViewedStore } from '@/lib/stores/recentlyViewedStore';
+import { useSavedBoutiquesStore } from '@/lib/stores/savedBoutiquesStore';
+import { useSupportChatStore } from '@/lib/stores/supportChatStore';
 import { useWishlistStore } from '@/lib/stores/wishlistStore';
 import { FullScreenLoader } from '@/components/loaders';
 
@@ -12,7 +15,10 @@ export default function AppRoutesLayout() {
   const initializeWishlist = useWishlistStore((s) => s.initializeForUser);
   const initializeNotifications = useNotificationsStore((s) => s.initializeForUser);
   const clearNotifications = useNotificationsStore((s) => s.clear);
+  const clearSavedBoutiques = useSavedBoutiquesStore((s) => s.clear);
+  const clearSupportChat = useSupportChatStore((s) => s.clear);
   const { loading, user } = useAuth();
+  usePushNotificationsBootstrap();
 
   useEffect(() => {
     if (!user?.id) return;
@@ -27,7 +33,9 @@ export default function AppRoutesLayout() {
     if (user?.id) return;
     void initializeWishlist(null);
     clearNotifications();
-  }, [initializeWishlist, clearNotifications, user?.id]);
+    clearSavedBoutiques();
+    clearSupportChat();
+  }, [initializeWishlist, clearNotifications, clearSavedBoutiques, clearSupportChat, user?.id]);
 
   if (loading) return <FullScreenLoader label="Restoring session..." />;
 
@@ -40,6 +48,10 @@ export default function AppRoutesLayout() {
       <Stack.Screen name="occasion-products" options={{ headerShown: false }} />
       <Stack.Screen name="occasions" options={{ headerShown: false }} />
       <Stack.Screen name="boutiques" options={{ headerShown: false }} />
+      <Stack.Screen
+        name="location-selector"
+        options={{ headerShown: false, animation: 'slide_from_right' }}
+      />
       <Stack.Screen name="trending" options={{ headerShown: false }} />
       <Stack.Screen name="wishlist" options={{ headerShown: false }} />
       <Stack.Screen name="cart" options={{ headerShown: false }} />
@@ -48,6 +60,7 @@ export default function AppRoutesLayout() {
       <Stack.Screen name="order-success" options={{ headerShown: false }} />
       <Stack.Screen name="search" options={{ headerShown: false }} />
       <Stack.Screen name="notifications" options={{ headerShown: false }} />
+      <Stack.Screen name="notification-settings" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="boutique-details" options={{ headerShown: false }} />
       <Stack.Screen name="boutique-profile" options={{ headerShown: false }} />

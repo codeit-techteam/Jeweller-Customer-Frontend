@@ -31,8 +31,9 @@ export function CategoryCard({ item, onPress, size = 72 }: Props) {
         ]}
       >
         <RemoteImage
-          uri={item.imageUri}
-          fallbackTint="#1f2937"
+          uri={item.imageUri?.trim() || undefined}
+          placeholder="category"
+          fallbackTint="#f5f0e6"
           style={[StyleSheet.absoluteFillObject, { borderRadius: radius }]}
         />
       </View>

@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { showPopup } from '@/lib/stores/popupStore';
 import { fontSizes, spacing } from '@/src/constants/theme';
 import { useAuth } from '@/context/AuthContext';
+import { useGuestLogout } from '@/src/hooks/useGuestLogout';
 
 const NAVY_PRIMARY = '#0B1C3D';
 const INPUT_BG = '#F5F6F8';
@@ -33,7 +34,8 @@ type EditProfileScreenProps = {
 
 export default function EditProfileScreen({ onBack }: EditProfileScreenProps) {
   const router = useRouter();
-  const { user, saveProfile, uploadProfileImage, logout } = useAuth();
+  const { user, saveProfile, uploadProfileImage } = useAuth();
+  const performGuestLogout = useGuestLogout();
   const [name, setName] = useState(user?.full_name ?? '');
   const [phone, setPhone] = useState(user?.phone ?? '');
   const [email, setEmail] = useState(user?.email ?? '');
@@ -108,6 +110,13 @@ export default function EditProfileScreen({ onBack }: EditProfileScreenProps) {
         phone: phoneDigits(phone),
         email: email.trim(),
       });
+      if (user?.id && process.env.EXPO_PUBLIC_BACKEND_API_URL) {
+        void fetch(`${process.env.EXPO_PUBLIC_BACKEND_API_URL}/api/notifications/events`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ eventKey: 'profile_updated', context: { userId: user.id } }),
+        }).catch(() => {});
+      }
       showPopup({
         type: 'success',
         title: 'Profile updated',
@@ -132,11 +141,10 @@ export default function EditProfileScreen({ onBack }: EditProfileScreenProps) {
       confirmLabel: 'Logout',
       destructive: true,
       onConfirm: async () => {
-        await logout();
-        router.replace('/(auth)/login');
+        await performGuestLogout();
       },
     });
-  }, [logout, router]);
+  }, [performGuestLogout]);
 
   const onDeleteAccount = useCallback(() => {
     showPopup({

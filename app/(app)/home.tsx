@@ -26,6 +26,7 @@ import {
 import { ShimmerBlock } from "@/components/loaders/ShimmerBlock";
 import { useNetworkReachable } from "@/hooks/useNetworkReachable";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
+import { useDiscoveryLocation } from "@/hooks/useDiscoveryLocation";
 import { useUserLocation } from "@/hooks/useUserLocation";
 import { useAuthGuard } from "@/src/hooks/useAuthGuard";
 import {
@@ -66,6 +67,7 @@ import {
 } from "@/lib/services/mock/imageUrls";
 import { snapshotFromListingFields } from "@/lib/services/mock/wishlist";
 import { useCartStore } from "@/lib/stores/cartStore";
+import { NotificationBadge } from "@/lib/components/common/NotificationBadge";
 import { useNotificationsStore } from "@/lib/stores/notificationsStore";
 import { useWishlistIds, useWishlistStore } from "@/lib/stores/wishlistStore";
 import { ApiError } from "@/services/api";
@@ -91,7 +93,7 @@ function toHomeTrendingListing(item: TrendingProduct): ListingProductCardItem {
   };
 }
 
-/** Home — “The Luxe & Co Promise” (Figma: 2×2 grid + centered fifth row) */
+/** Home — “The GehnaHub Promise” (Figma: 2×2 grid + centered fifth row) */
 const PROMISE_ICON_SIZE = 26;
 const PROMISE_ITEMS: {
   icon: React.ComponentProps<typeof MaterialIcons>["name"];
@@ -149,8 +151,8 @@ function HomeContent() {
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const reachable = useNetworkReachable();
+  const { effectiveCoords: userCoords } = useDiscoveryLocation();
   const {
-    coords: userCoords,
     loading: locationLoading,
     permission: locationPermission,
     gpsFailed: locationGpsFailed,
@@ -213,10 +215,9 @@ function HomeContent() {
           : await fetchCollectionsUi();
       setHomeCategoryPreview(categories.slice(0, 4).map((item) => item.name));
       setHomeCategoryImageByName(
-        categories.reduce<Record<string, string>>((acc, item) => {
-          if (item.image) acc[item.name] = item.image;
-          return acc;
-        }, {}),
+        Object.fromEntries(
+          categories.map((item) => [item.name, item.image ?? ""]),
+        ),
       );
       setRawBoutiques(boutiques);
       setHomeTrendingPreview(trending.slice(0, 4));
@@ -450,10 +451,12 @@ function HomeContent() {
     >
       <View>
       <View style={styles.topBar}>
-        <Pressable onPress={() => router.push("/menu")} style={styles.menuBtn}>
-          <Text style={styles.menuIcon}>☰</Text>
-        </Pressable>
-        <Text style={styles.brand}>LUXE & CO</Text>
+        <View style={styles.topBarLeft}>
+          <Pressable onPress={() => router.push("/menu")} style={styles.menuBtn}>
+            <Text style={styles.menuIcon}>☰</Text>
+          </Pressable>
+          <Text style={styles.brand}>GehnaHub</Text>
+        </View>
         <View style={styles.rightIcons}>
           <Pressable
             accessibilityRole="button"
@@ -469,15 +472,7 @@ function HomeContent() {
               size={24}
               color={styles.icon.color}
             />
-            {unreadNotificationsCount > 0 ? (
-              <View style={styles.notificationBadge}>
-                <Text style={styles.notificationBadgeText}>
-                  {unreadNotificationsCount > 99
-                    ? "99+"
-                    : String(unreadNotificationsCount)}
-                </Text>
-              </View>
-            ) : null}
+            <NotificationBadge count={unreadNotificationsCount} />
           </Pressable>
           <WishlistNavIcon
             count={wishlistCount}
@@ -611,8 +606,9 @@ function HomeContent() {
               onPress={() => navigateToCategoryDetails(id)}
             >
               <RemoteImage
-                uri={homeCategoryImageByName[id]}
-                fallbackTint="#111"
+                uri={homeCategoryImageByName[id] || undefined}
+                placeholder="category"
+                fallbackTint="#f5f0e6"
                 style={styles.categoryImage}
               />
               <Text style={styles.categoryLabel}>{id}</Text>
@@ -633,7 +629,7 @@ function HomeContent() {
           .map((item) => (
             <FeaturedBoutiqueCard
               key={item.id}
-              item={{ ...item, image: item.image ?? PLACEHOLDER_IMAGE_URI }}
+              item={item}
               onPressCard={() => openBoutiqueProfile(item.id)}
               onDirections={() => openFeaturedDirections(item.location)}
               onCall={() => openFeaturedCall(item.phone)}
@@ -771,7 +767,7 @@ function HomeContent() {
         : null}
 
       <View style={styles.promiseSection}>
-        <Text style={styles.promiseHeading}>The Luxe & Co Promise</Text>
+        <Text style={styles.promiseHeading}>The GehnaHub Promise</Text>
         <View style={styles.promiseRow}>
           {PROMISE_ITEMS.slice(0, 2).map((item) => (
             <View key={item.label} style={styles.promiseCell}>
@@ -850,7 +846,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  menuBtn: { padding: spacing.xs },
+  topBarLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    flexShrink: 1,
+  },
+  menuBtn: { padding: spacing.xs, marginRight: 2 },
   menuIcon: { fontSize: 18, color: "#0e1d3a" },
   brand: { fontSize: fontSizes.lg, fontWeight: "800", color: "#0e1d3a" },
   rightIcons: { flexDirection: "row", gap: spacing.md, alignItems: "center" },

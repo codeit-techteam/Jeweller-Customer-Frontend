@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 import type { BoutiqueApiListRow } from '@/lib/boutiques/boutiqueUi';
+import { formatBoutiqueLocation } from '@/lib/utils/formatBoutiqueLocation';
 import {
   getBoutiqueHoursStatus,
   normalizeWorkingDays,
@@ -92,10 +93,14 @@ function mapApiBoutiqueToRecentCard(
     (typeof b.whatsapp_number === 'string' && b.whatsapp_number.trim()) ||
     (typeof b.whatsapp === 'string' && b.whatsapp.trim()) ||
     null;
-  const locationLine =
-    (typeof b.location === 'string' && b.location.trim()) ||
-    (typeof b.full_address === 'string' && b.full_address.trim()) ||
-    'Location unavailable';
+  const locationLine = formatBoutiqueLocation({
+    location: typeof b.location === 'string' ? b.location : null,
+    full_address: typeof b.full_address === 'string' ? b.full_address : null,
+    address: typeof b.address === 'string' ? b.address : null,
+    area: typeof b.area === 'string' ? b.area : null,
+    city: typeof b.city === 'string' ? b.city : null,
+    state: typeof b.state === 'string' ? b.state : null,
+  });
   const ratingNum = b.rating != null ? Number(b.rating) : NaN;
   const rating = Number.isFinite(ratingNum) ? ratingNum : 0;
   const reviews = Math.max(0, Math.floor(Number(b.reviews_count ?? 0)));

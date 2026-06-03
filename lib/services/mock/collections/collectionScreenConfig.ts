@@ -102,12 +102,12 @@ function genericConfig(slug: string): CollectionScreenConfig {
   const footer: FooterBlock = {
     title: 'Crafted for You',
     body:
-      'Every design in this edit reflects the LUXE & CO promise: certified stones, transparent pricing, and artistry you can feel.',
+      'Every design in this edit reflects the GehnaHub promise: certified stones, transparent pricing, and artistry you can feel.',
   };
   return {
     navTitle,
     heroUri,
-    heroLabel: 'THE LUXE EDIT',
+    heroLabel: 'THE GEHNAHUB EDIT',
     heroTitle: 'Jewellery That Speaks to You.',
     heroSubtitle:
       'Explore this capsule of signature silhouettes — perfect for building a collection that grows with your story.',

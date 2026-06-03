@@ -1,26 +1,48 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import { isApiConfigured } from '@/lib/appConfig';
 import { getSupabase } from '@/lib/supabaseClient';
+import { apiRequest } from '@/services/httpClient';
 
 export type AppNotificationType =
-  | 'lead'
-  | 'order'
+  | 'offer'
+  | 'appointment'
+  | 'callback'
+  | 'support'
   | 'system'
+  | 'gold_rate'
+  | 'collection'
+  | 'promotion'
+  | 'profile'
+  | 'order'
+  | 'lead'
   | 'document'
   | 'payment'
-  | 'approval'
-  | 'appointment'
-  | 'offer'
-  | 'collection';
+  | 'approval';
+
+export type NotificationFilterTab = 'all' | 'offers' | 'appointments' | 'support' | 'system';
+
+export type NotificationSettings = {
+  user_id: string;
+  offers_enabled: boolean;
+  appointments_enabled: boolean;
+  support_enabled: boolean;
+  system_enabled: boolean;
+  push_enabled: boolean;
+};
 
 export type AppNotification = {
   id: string;
+  notificationId: string;
   userId: string;
   title: string;
   body: string;
   type: AppNotificationType;
   isRead: boolean;
   createdAt: string;
+  imageUrl?: string;
+  actionType?: string;
+  actionId?: string;
   data: Record<string, unknown>;
 };
 
@@ -31,6 +53,24 @@ export type FetchNotificationsResult = {
 
 const PAGE_SIZE_DEFAULT = 20;
 
+const USER_NOTIFICATION_SELECT = `
+  id,
+  is_read,
+  read_at,
+  created_at,
+  notification:notifications (
+    id,
+    title,
+    message,
+    type,
+    image,
+    action_type,
+    action_id,
+    metadata,
+    created_at
+  )
+`;
+
 function requireSupabase(): SupabaseClient {
   const client = getSupabase();
   if (!client) {
@@ -39,180 +79,83 @@ function requireSupabase(): SupabaseClient {
   return client;
 }
 
-function toAppNotification(row: any): AppNotification {
+function toAppNotification(row: any): AppNotification | null {
+  const notification = row?.notification;
+  if (!notification) return null;
+
+  const metadata = (notification.metadata ?? {}) as Record<string, unknown>;
+
   return {
     id: String(row.id),
-    userId: String(row.user_id),
-    title: String(row.title ?? ''),
-    body: String(row.body ?? ''),
-    type: (row.type ?? 'system') as AppNotificationType,
+    notificationId: String(notification.id),
+    userId: String(row.user_id ?? ''),
+    title: String(notification.title ?? ''),
+    body: String(notification.message ?? ''),
+    type: (notification.type ?? 'system') as AppNotificationType,
     isRead: Boolean(row.is_read),
-    createdAt: String(row.created_at ?? new Date().toISOString()),
-    data: (row.data ?? {}) as Record<string, unknown>,
+    createdAt: String(notification.created_at ?? row.created_at ?? new Date().toISOString()),
+    imageUrl:
+      typeof notification.image === 'string' && notification.image.trim()
+        ? notification.image
+        : typeof notification.image_url === 'string' && notification.image_url.trim()
+          ? notification.image_url
+          : undefined,
+    actionType: notification.action_type ?? 'none',
+    actionId: notification.action_id ?? undefined,
+    data: metadata,
   };
 }
 
-async function getExistingEventKeys(client: SupabaseClient, userId: string): Promise<Set<string>> {
-  const { data, error } = await client
-    .from('notifications')
-    .select('data')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(300);
-
-  if (error) throw error;
-
-  const keys = new Set<string>();
-  for (const row of data ?? []) {
-    const key = (row?.data as Record<string, unknown> | undefined)?.event_key;
-    if (typeof key === 'string' && key.trim().length > 0) {
-      keys.add(key);
-    }
+export function matchesNotificationFilter(
+  item: AppNotification,
+  tab: NotificationFilterTab,
+): boolean {
+  if (tab === 'all') return true;
+  if (tab === 'offers') {
+    return ['offer', 'promotion', 'collection'].includes(item.type);
   }
-  return keys;
+  if (tab === 'appointments') return item.type === 'appointment';
+  if (tab === 'support')
+    return item.type === 'callback' || item.type === 'gold_rate' || item.type === 'support';
+  return ['system', 'gold_rate', 'profile', 'order', 'lead', 'document', 'payment', 'approval'].includes(
+    item.type,
+  );
 }
 
-export async function ensureGeneratedNotifications(userId: string): Promise<void> {
+function userHeaders(userId: string): Record<string, string> {
+  return { 'x-user-id': userId };
+}
+
+/** Customer reads go through backend API (bypasses RLS for dev-auth users without Supabase session). */
+async function useCustomerNotificationApi(): Promise<boolean> {
+  return isApiConfigured();
+}
+
+export async function fetchNotificationRecipient(
+  userId: string,
+  recipientId: string,
+): Promise<AppNotification | null> {
+  if (await useCustomerNotificationApi()) {
+    return apiRequest<AppNotification | null>(
+      { url: `/api/notifications/recipient/${recipientId}`, method: 'GET', params: { userId } },
+      userHeaders(userId),
+    );
+  }
+
   const client = requireSupabase();
-  const existingKeys = await getExistingEventKeys(client, userId);
-
-  const toInsert: Array<Record<string, unknown>> = [];
-
-  const { data: appointments } = await client
-    .from('appointments')
-    .select('id, date, time, status, boutique:boutiques(name)')
+  const { data, error } = await client
+    .from('user_notifications')
+    .select(USER_NOTIFICATION_SELECT)
     .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(20);
+    .eq('id', recipientId)
+    .maybeSingle();
 
-  for (const item of appointments ?? []) {
-    const key = `appointment_booked:${item.id}`;
-    if (existingKeys.has(key)) continue;
-    toInsert.push({
-      user_id: userId,
-      title: 'Appointment booked',
-      body: `Your appointment${item?.boutique?.name ? ` with ${item.boutique.name}` : ''} is confirmed.`,
-      type: 'system',
-      is_read: false,
-      data: {
-        event_key: key,
-        source_event: 'appointment_booked',
-        route: '/(app)/appointments',
-        appointmentId: item.id,
-      },
-    });
-  }
+  if (error) throw error;
+  return data ? toAppNotification({ ...data, user_id: userId }) : null;
+}
 
-  const { data: orders } = await client
-    .from('platform_orders')
-    .select('id, status, amount, product:products(name)')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(20);
-
-  for (const item of orders ?? []) {
-    const key = `order_update:${item.id}:${item.status ?? 'unknown'}`;
-    if (existingKeys.has(key)) continue;
-    toInsert.push({
-      user_id: userId,
-      title: 'Order update',
-      body: `${item?.product?.name ?? 'Your order'} is now ${String(item.status ?? 'updated')}.`,
-      type: 'order',
-      is_read: false,
-      data: {
-        event_key: key,
-        source_event: 'order_update',
-        route: '/(app)/orders',
-        orderId: item.id,
-        status: item.status,
-      },
-    });
-  }
-
-  const { data: offers } = await client
-    .from('offers')
-    .select('id, title, subtitle, is_active')
-    .eq('is_active', true)
-    .order('updated_at', { ascending: false })
-    .limit(10);
-
-  for (const item of offers ?? []) {
-    const key = `offer:${item.id}`;
-    if (existingKeys.has(key)) continue;
-    toInsert.push({
-      user_id: userId,
-      title: item.title ?? 'Boutique offer',
-      body: item.subtitle ?? 'New offer is now live for you.',
-      type: 'system',
-      is_read: false,
-      data: {
-        event_key: key,
-        source_event: 'boutique_offer',
-        route: '/(app)/home',
-        offerId: item.id,
-      },
-    });
-  }
-
-  const { data: collections } = await client
-    .from('collections')
-    .select('id, title, subtitle, slug, is_active')
-    .eq('is_active', true)
-    .order('updated_at', { ascending: false })
-    .limit(10);
-
-  for (const item of collections ?? []) {
-    const key = `collection:${item.id}`;
-    if (existingKeys.has(key)) continue;
-    toInsert.push({
-      user_id: userId,
-      title: item.title ?? 'New collection',
-      body: item.subtitle ?? 'Explore our latest jewellery collection.',
-      type: 'system',
-      is_read: false,
-      data: {
-        event_key: key,
-        source_event: 'new_collection',
-        route: '/(app)/collection/[slug]',
-        routeParams: { slug: item.slug },
-        collectionId: item.id,
-      },
-    });
-  }
-
-  const { data: announcements } = await client
-    .from('admin_activity_logs')
-    .select('id, action, metadata')
-    .order('created_at', { ascending: false })
-    .limit(10);
-
-  for (const item of announcements ?? []) {
-    const action = String(item.action ?? '');
-    if (!action.toLowerCase().includes('announce') && !action.toLowerCase().includes('system')) continue;
-    const key = `system_announcement:${item.id}`;
-    if (existingKeys.has(key)) continue;
-    const metadata = (item.metadata ?? {}) as Record<string, unknown>;
-    toInsert.push({
-      user_id: userId,
-      title: String(metadata.title ?? 'System announcement'),
-      body: String(metadata.message ?? 'There is a new system update.'),
-      type: 'system',
-      is_read: false,
-      data: {
-        event_key: key,
-        source_event: 'system_announcement',
-        route: '/(app)/home',
-      },
-    });
-  }
-
-  if (toInsert.length === 0) return;
-
-  const { error } = await client.from('notifications').insert(toInsert);
-  if (error) {
-    // Notification generation should not block screen rendering.
-    console.warn('[notifications] Failed to generate event notifications', error.message);
-  }
+export async function ensureGeneratedNotifications(_userId: string): Promise<void> {
+  // Event-driven notifications only; no client-side backfill.
 }
 
 export async function fetchNotificationsPage(
@@ -220,47 +163,110 @@ export async function fetchNotificationsPage(
   page: number,
   pageSize = PAGE_SIZE_DEFAULT,
 ): Promise<FetchNotificationsResult> {
+  if (await useCustomerNotificationApi()) {
+    const result = await apiRequest<FetchNotificationsResult>(
+      {
+        url: '/api/notifications',
+        method: 'GET',
+        params: { userId, page, pageSize },
+      },
+      userHeaders(userId),
+    );
+    return {
+      items: result.items ?? [],
+      hasMore: Boolean(result.hasMore),
+    };
+  }
+
   const client = requireSupabase();
   const from = page * pageSize;
   const to = from + pageSize - 1;
 
   const { data, error } = await client
-    .from('notifications')
-    .select('id, user_id, title, body, type, is_read, data, created_at')
+    .from('user_notifications')
+    .select(USER_NOTIFICATION_SELECT)
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .range(from, to);
 
   if (error) throw error;
 
-  const items = (data ?? []).map(toAppNotification);
+  const items = (data ?? [])
+    .map((row) => toAppNotification({ ...row, user_id: userId }))
+    .filter((row): row is AppNotification => row !== null);
+
   return { items, hasMore: items.length === pageSize };
 }
 
-export async function markNotificationAsRead(userId: string, id: string): Promise<void> {
+export async function markNotificationAsRead(userId: string, recipientId: string): Promise<void> {
+  if (await useCustomerNotificationApi()) {
+    await apiRequest(
+      { url: `/api/notifications/${recipientId}/read`, method: 'PATCH', params: { userId } },
+      userHeaders(userId),
+    );
+    return;
+  }
+
   const client = requireSupabase();
   const { error } = await client
-    .from('notifications')
-    .update({ is_read: true })
+    .from('user_notifications')
+    .update({ is_read: true, read_at: new Date().toISOString() })
     .eq('user_id', userId)
-    .eq('id', id);
+    .eq('id', recipientId);
   if (error) throw error;
 }
 
 export async function markAllNotificationsAsRead(userId: string): Promise<void> {
+  if (await useCustomerNotificationApi()) {
+    await apiRequest(
+      { url: '/api/notifications/read-all', method: 'PATCH', params: { userId } },
+      userHeaders(userId),
+    );
+    return;
+  }
+
   const client = requireSupabase();
   const { error } = await client
-    .from('notifications')
-    .update({ is_read: true })
+    .from('user_notifications')
+    .update({ is_read: true, read_at: new Date().toISOString() })
     .eq('user_id', userId)
     .eq('is_read', false);
   if (error) throw error;
 }
 
+export async function deleteNotificationRecipient(
+  userId: string,
+  recipientId: string,
+): Promise<void> {
+  if (await useCustomerNotificationApi()) {
+    await apiRequest(
+      { url: `/api/notifications/${recipientId}`, method: 'DELETE', params: { userId } },
+      userHeaders(userId),
+    );
+    return;
+  }
+
+  const client = requireSupabase();
+  const { error } = await client
+    .from('user_notifications')
+    .delete()
+    .eq('user_id', userId)
+    .eq('id', recipientId);
+  if (error) throw error;
+}
+
 export async function fetchUnreadNotificationsCount(userId: string): Promise<number> {
+  if (await useCustomerNotificationApi()) {
+    const result = await apiRequest<{ count: number }>(
+      { url: '/api/notifications/unread-count', method: 'GET', params: { userId } },
+      userHeaders(userId),
+    );
+    return result.count ?? 0;
+  }
+
   const client = requireSupabase();
   const { count, error } = await client
-    .from('notifications')
+    .from('user_notifications')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', userId)
     .eq('is_read', false);
@@ -278,10 +284,6 @@ type AppointmentNotificationInput = {
   time: string;
 };
 
-/**
- * Writes appointment-booked notifications immediately so realtime subscribers
- * receive them while app is running (instead of waiting for next refresh).
- */
 export async function createAppointmentBookedNotifications(
   input: AppointmentNotificationInput,
 ): Promise<void> {
@@ -295,53 +297,147 @@ export async function createAppointmentBookedNotifications(
     time,
   } = input;
 
-  const baseData = {
-    source_event: 'appointment_booked',
-    route: '/(app)/appointments',
-    appointmentId,
-    boutiqueId,
-  };
-
-  const rows: Array<Record<string, unknown>> = [
-    {
-      user_id: userId,
-      title: 'Appointment booked',
-      body: `Your appointment${boutiqueName ? ` with ${boutiqueName}` : ''} is confirmed for ${date} at ${time}.`,
-      type: 'system',
-      is_read: false,
-      data: {
-        ...baseData,
-        event_key: `appointment_booked:${appointmentId}:customer`,
-      },
+  await client.rpc('deliver_notification', {
+    p_user_id: userId,
+    p_title: '✅ Appointment Booked',
+    p_message: `Your appointment request has been submitted successfully${boutiqueName ? ` with ${boutiqueName}` : ''} for ${date} at ${time}.`,
+    p_type: 'appointment',
+    p_image_url: null,
+    p_action_type: 'appointment',
+    p_action_id: appointmentId,
+    p_metadata: {
+      event_key: `appointment_booked:${appointmentId}:customer`,
+      source_event: 'appointment_booked',
+      route: '/(app)/appointments',
+      appointmentId,
+      boutiqueId,
     },
-  ];
+  });
 
-  // Also notify boutique owner (if mapped) so boutique-side apps can consume same table.
-  const { data: boutique, error: boutiqueErr } = await client
+  const { data: boutique } = await client
     .from('boutiques')
     .select('jeweller_user_id')
     .eq('id', boutiqueId)
     .maybeSingle();
 
-  if (!boutiqueErr && boutique?.jeweller_user_id) {
-    rows.push({
-      user_id: boutique.jeweller_user_id,
-      title: 'New appointment request',
-      body: `${boutiqueName ?? 'Your boutique'} has a new appointment booking for ${date} at ${time}.`,
-      type: 'system',
-      is_read: false,
-      data: {
+  if (boutique?.jeweller_user_id) {
+    await client.rpc('deliver_notification', {
+      p_user_id: boutique.jeweller_user_id,
+      p_title: 'New appointment request',
+      p_message: `${boutiqueName ?? 'Your boutique'} has a new appointment booking for ${date} at ${time}.`,
+      p_type: 'appointment',
+      p_action_type: 'appointment',
+      p_action_id: appointmentId,
+      p_metadata: {
+        event_key: `appointment_booked:${appointmentId}:boutique`,
         source_event: 'appointment_received',
         route: '/(app)/appointments',
         appointmentId,
         boutiqueId,
-        event_key: `appointment_booked:${appointmentId}:boutique`,
       },
     });
   }
+}
 
-  const { error } = await client.from('notifications').insert(rows);
-  if (error) {
-    console.warn('[notifications] Failed to create appointment notification', error.message);
+export function resolveNotificationRoute(notification: AppNotification): {
+  pathname: string;
+  params?: Record<string, string>;
+} | null {
+  const data = notification.data ?? {};
+  const route = typeof data.route === 'string' ? data.route : null;
+  const routeParams =
+    data.routeParams && typeof data.routeParams === 'object'
+      ? (data.routeParams as Record<string, string>)
+      : undefined;
+
+  if (route) {
+    return { pathname: route, params: routeParams };
   }
+
+  switch (notification.actionType) {
+    case 'offer':
+      return { pathname: '/(app)/home' };
+    case 'appointment':
+      if (notification.actionId) {
+        return {
+          pathname: '/(app)/appointment-details',
+          params: { id: String(notification.actionId) },
+        };
+      }
+      return { pathname: '/(app)/appointments' };
+    case 'collection':
+      if (typeof data.slug === 'string') {
+        return {
+          pathname: '/(app)/collection/[slug]',
+          params: { slug: data.slug },
+        };
+      }
+      return { pathname: '/(app)/home' };
+    case 'boutique':
+      if (notification.actionId) {
+        return {
+          pathname: '/(app)/boutique-details',
+          params: { id: String(notification.actionId) },
+        };
+      }
+      return null;
+    case 'callback':
+      return { pathname: '/(app)/(tabs)/profile' };
+    case 'support':
+      return { pathname: '/(app)/chat' };
+    case 'order':
+      return { pathname: '/(app)/orders' };
+    case 'url':
+      return null;
+    default:
+      return null;
+  }
+}
+
+const API_BASE = process.env.EXPO_PUBLIC_BACKEND_API_URL ?? '';
+
+export async function fetchNotificationSettings(userId: string): Promise<NotificationSettings> {
+  if (!API_BASE) {
+    return {
+      user_id: userId,
+      offers_enabled: true,
+      appointments_enabled: true,
+      support_enabled: true,
+      system_enabled: true,
+      push_enabled: true,
+    };
+  }
+  const res = await fetch(`${API_BASE}/api/notifications/settings/${userId}`);
+  const json = await res.json();
+  if (!res.ok) throw new Error(json?.message ?? 'Failed to load settings');
+  return json.data as NotificationSettings;
+}
+
+export async function updateNotificationSettings(
+  userId: string,
+  patch: Partial<NotificationSettings>,
+): Promise<NotificationSettings> {
+  if (!API_BASE) throw new Error('Backend API URL is not configured');
+  const res = await fetch(`${API_BASE}/api/notifications/settings/${userId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json?.message ?? 'Failed to update settings');
+  return json.data as NotificationSettings;
+}
+
+export async function registerPushToken(input: {
+  userId: string;
+  token: string;
+  platform?: string;
+  provider?: string;
+}): Promise<void> {
+  if (!API_BASE) return;
+  await fetch(`${API_BASE}/api/notifications/push-token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
 }

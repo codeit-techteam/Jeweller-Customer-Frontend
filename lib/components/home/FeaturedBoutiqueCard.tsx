@@ -74,7 +74,12 @@ export function FeaturedBoutiqueCard({
         style={({ pressed }) => [styles.cardPressable, pressed && styles.pressedMain]}
       >
         <View style={styles.imageWrapper}>
-          <RemoteImage uri={item.image} fallbackTint="#d4c8ac" style={styles.image} />
+          <RemoteImage
+            uri={item.image}
+            fallbackTint="#d4c8ac"
+            placeholder="boutique-cover"
+            style={styles.image}
+          />
           {showVerifiedOverlay(item) ? (
             <View style={styles.verifiedBadge}>
               <Text style={styles.verifiedBadgeText}>✔ VERIFIED BOUTIQUE</Text>
@@ -105,16 +110,22 @@ export function FeaturedBoutiqueCard({
                 <Text style={styles.metaText}>{item.reviewsCount} reviews</Text>
               </>
             ) : null}
-            <Text style={styles.metaDot}> • </Text>
-            <Text style={styles.metaText}>
-              {formatBoutiqueDistanceLine({
+            {(() => {
+              const distanceLine = formatBoutiqueDistanceLine({
                 distanceKm: item.distanceKm,
                 locationLoading,
                 hasBoutiqueCoords: boutiqueHasCoordinates(item),
                 permission: locationPermission,
                 userLocationGpsFailed,
-              })}
-            </Text>
+              });
+              if (!distanceLine) return null;
+              return (
+                <>
+                  <Text style={styles.metaDot}> • </Text>
+                  <Text style={styles.metaText}>{distanceLine}</Text>
+                </>
+              );
+            })()}
           </View>
 
           <View style={styles.locationRow}>

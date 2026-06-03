@@ -16,10 +16,12 @@ import { AppConfigGate } from "@/components/AppConfigGate";
 import { StartupErrorBoundary } from "@/components/StartupErrorBoundary";
 import { FullScreenLoader } from "@/components/loaders";
 import { logStartupConfig } from "@/lib/appConfig";
+import { DiscoveryLocationBootstrap } from "@/components/DiscoveryLocationBootstrap";
 import { UserLocationBootstrap } from "@/components/UserLocationBootstrap";
 import { AuthProvider } from "@/context/AuthContext";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { GlobalPopup } from "@/lib/components/common/GlobalPopup";
+import { InAppNotificationBanner } from "@/lib/components/common/InAppNotificationBanner";
 import { GuestBanner } from "@/lib/components/common/GuestBanner";
 import { LoginRequiredSheet } from "@/lib/components/common/LoginRequiredSheet";
 import { PostLoginSyncHandler } from "@/lib/components/common/PostLoginSyncHandler";
@@ -118,6 +120,7 @@ export default function RootLayout() {
                 <AuthProvider>
                   <PostLoginSyncHandler />
                   <UserLocationBootstrap />
+                  <DiscoveryLocationBootstrap />
                   <Stack>
                     <Stack.Screen
                       name="(app)"
@@ -156,6 +159,7 @@ export default function RootLayout() {
                   <WishlistToast />
                   <CartToast />
                   <GlobalPopup />
+                  <InAppNotificationBanner />
                 </AuthProvider>
               </QueryProvider>
             </BottomSheetModalProvider>

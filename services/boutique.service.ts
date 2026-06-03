@@ -41,6 +41,19 @@ export type BoutiqueStatusUi = {
  */
 export async function fetchBoutiques(_userLocation?: UserCoords | null): Promise<BoutiqueUiListItem[]> {
   const rows = await getBoutiques();
+  if (__DEV__) {
+    for (const row of rows.slice(0, 5)) {
+      const cover =
+        (row as BoutiqueApiListRow).cover_image_url ??
+        (row as BoutiqueApiListRow).cover_image ??
+        (row as BoutiqueApiListRow).image;
+      console.log("[fetchBoutiques] row", {
+        id: row.id,
+        name: row.name,
+        cover,
+      });
+    }
+  }
   return rows.map((row, index) =>
     mapBoutiqueForUi(row as BoutiqueApiListRow, index, { userLocation: null }),
   );
