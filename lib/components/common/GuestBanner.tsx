@@ -33,7 +33,7 @@ export function GuestBanner() {
       <View style={styles.banner}>
         <MaterialIcons name="info-outline" size={18} color={GOLD} style={styles.icon} />
         <Text style={styles.text} numberOfLines={2}>
-          Login to save your wishlist, appointments and cart.
+          Login to save your wishlist and appointments.
         </Text>
         <Pressable style={styles.cta} onPress={onLogin} hitSlop={8}>
           <Text style={styles.ctaText}>Login Now</Text>

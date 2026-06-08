@@ -15,6 +15,12 @@ export type SearchSuggestion = {
   subtitle?: string;
   productId?: string;
   categoryParam?: string;
+  categorySlug?: string;
+  productCount?: number;
+  imageUri?: string;
+  price?: number;
+  boutiqueName?: string;
+  boutiqueVerified?: boolean;
   collectionSlug?: string;
   chipLabel?: string;
   relationshipSectionId?: string;
@@ -38,10 +44,27 @@ export type BuildSearchSuggestionsInput = {
   chips: ChipRow[];
   /** Already `filterCatalog` output for `debouncedQ`. */
   productHits: CatalogProduct[];
+  /** Full catalog — used for per-category product counts in suggestions. */
+  allProducts?: CatalogProduct[];
 };
 
 const MAX_TOTAL = 14;
-const MAX_PRODUCTS = 6;
+const MAX_PRODUCTS = 4;
+
+function countCategoryProducts(
+  products: CatalogProduct[],
+  categoryParam: string,
+): number {
+  const needle = categoryParam.trim().toLowerCase();
+  if (!needle) return 0;
+  return products.filter(
+    (p) => p.category.trim().toLowerCase() === needle,
+  ).length;
+}
+
+function categorySlugFromParam(categoryParam: string): string {
+  return categoryParam.trim().toLowerCase().replace(/\s+/g, "-");
+}
 
 /**
  * Merges catalog matches with taxonomy chips for the live suggestions rail.
@@ -54,51 +77,59 @@ export function buildSearchSuggestions(
   const dq = input.debouncedQ.trim().toLowerCase();
   if (!q) return [];
 
-  const out: SearchSuggestion[] = [];
+  const categories: SearchSuggestion[] = [];
+  const products: SearchSuggestion[] = [];
+  const others: SearchSuggestion[] = [];
   const seen = new Set<string>();
+  const catalog = input.allProducts ?? input.productHits;
 
-  const push = (row: SearchSuggestion) => {
+  const push = (bucket: SearchSuggestion[], row: SearchSuggestion) => {
     const dedupe = `${row.kind}:${row.label.trim().toLowerCase()}`;
-    if (seen.has(dedupe)) return;
+    if (seen.has(dedupe)) return false;
     seen.add(dedupe);
-    out.push(row);
+    bucket.push(row);
+    return true;
   };
-
-  const productNeedle = dq.length >= 2 ? dq : q.length >= 2 ? q : "";
-  if (productNeedle) {
-    for (const p of input.productHits.slice(0, MAX_PRODUCTS)) {
-      const name = p.name?.trim();
-      if (!name) continue;
-      push({
-        key: `p-${p.id}`,
-        kind: "product",
-        label: name,
-        subtitle: "Product",
-        productId: p.id,
-      });
-      if (out.length >= MAX_TOTAL) return out;
-    }
-  }
 
   const match = (label: string, needle: string) =>
     needle.length > 0 && label.toLowerCase().includes(needle);
 
   for (const c of input.categories) {
     if (match(c.label, q)) {
-      push({
+      push(categories, {
         key: `c-${c.id}`,
         kind: "category",
         label: c.label,
         subtitle: "Category",
         categoryParam: c.categoryParam,
+        categorySlug: categorySlugFromParam(c.categoryParam),
+        productCount: countCategoryProducts(catalog, c.categoryParam),
       });
     }
-    if (out.length >= MAX_TOTAL) return out;
+  }
+
+  const productNeedle = dq.length >= 1 ? dq : q.length >= 1 ? q : "";
+  if (productNeedle) {
+    for (const p of input.productHits.slice(0, MAX_PRODUCTS)) {
+      const name = p.name?.trim();
+      if (!name) continue;
+      push(products, {
+        key: `p-${p.id}`,
+        kind: "product",
+        label: name,
+        subtitle: "Product",
+        productId: p.id,
+        imageUri: p.imageUri,
+        price: p.price,
+        boutiqueName: p.boutiqueName ?? undefined,
+        boutiqueVerified: p.boutiqueVerified,
+      });
+    }
   }
 
   for (const o of input.occasions) {
     if (match(o.title, q)) {
-      push({
+      push(others, {
         key: `o-${o.id}`,
         kind: "occasion",
         label: o.title,
@@ -106,12 +137,11 @@ export function buildSearchSuggestions(
         collectionSlug: o.collectionSlug.trim(),
       });
     }
-    if (out.length >= MAX_TOTAL) return out;
   }
 
   for (const col of input.collections) {
     if (match(col.title, q)) {
-      push({
+      push(others, {
         key: `col-${col.id}`,
         kind: "collection",
         label: col.title,
@@ -119,12 +149,11 @@ export function buildSearchSuggestions(
         collectionSlug: col.slug.trim(),
       });
     }
-    if (out.length >= MAX_TOTAL) return out;
   }
 
   for (const r of input.relationships) {
     if (match(r.title, q)) {
-      push({
+      push(others, {
         key: `r-${r.id}`,
         kind: "relationship_section",
         label: r.title,
@@ -132,12 +161,11 @@ export function buildSearchSuggestions(
         relationshipSectionId: r.id,
       });
     }
-    if (out.length >= MAX_TOTAL) return out;
   }
 
   for (const ch of input.chips) {
     if (match(ch.label, q)) {
-      push({
+      push(others, {
         key: `t-${ch.id}`,
         kind: "trending_chip",
         label: ch.label,
@@ -145,8 +173,7 @@ export function buildSearchSuggestions(
         chipLabel: ch.label,
       });
     }
-    if (out.length >= MAX_TOTAL) return out;
   }
 
-  return out;
+  return [...categories, ...products, ...others].slice(0, MAX_TOTAL);
 }

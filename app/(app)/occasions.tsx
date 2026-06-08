@@ -17,7 +17,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
-import { CartNavIcon } from '@/lib/components/common/CartNavIcon';
 import { RemoteImage } from '@/lib/components/common/RemoteImage';
 import { pushCollection } from '@/lib/navigation/collectionNavigation';
 import { pushProductDetails } from '@/lib/navigation/productNavigation';
@@ -25,7 +24,6 @@ import { OCCASION_HERO_URI } from '@/lib/services/mock/imageUrls';
 import { fetchOccasionsUi } from '@/lib/services/catalogApi';
 import { fetchProductsForCollection } from '@/lib/services/productCatalog';
 import { formatBoutiqueMeta } from '@/lib/utils/formatBoutiqueMeta';
-import { useCartStore } from '@/lib/stores/cartStore';
 import { BottomTabBar } from '@/src/components/navigation/BottomTabBar';
 import { fontSizes, radius, spacing } from '@/src/constants/theme';
 
@@ -118,12 +116,6 @@ export default function OccasionsScreen() {
     useCallback(() => loadOccasionsData({ silent: true }), [loadOccasionsData]),
   );
   const router = useRouter();
-  const cartCount = useCartStore((s) =>
-    s.items.reduce((acc, line) => acc + line.qty, 0),
-  );
-  const openCart = useCallback(() => {
-    router.push('/(app)/cart');
-  }, [router]);
   const { width } = useWindowDimensions();
 
   const tileW = useMemo(() => Math.max(0, (width - 16 * 2 - 12) / 2), [width]);
@@ -246,14 +238,7 @@ export default function OccasionsScreen() {
             />
           </Pressable>
           <Text style={styles.screenTitle}>Shop by Occasion</Text>
-          <CartNavIcon
-            variant="plain"
-            count={cartCount}
-            onPress={openCart}
-            size={22}
-            iconColor={NAVY}
-            style={styles.topIcon}
-          />
+          <View style={styles.topIcon} />
         </View>
 
         <FlatList

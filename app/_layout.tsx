@@ -26,7 +26,6 @@ import { GuestBanner } from "@/lib/components/common/GuestBanner";
 import { LoginRequiredSheet } from "@/lib/components/common/LoginRequiredSheet";
 import { PostLoginSyncHandler } from "@/lib/components/common/PostLoginSyncHandler";
 import { toastConfig } from "@/lib/components/common/Toast";
-import { CartToast } from "@/lib/components/common/CartToast";
 import { WishlistToast } from "@/lib/components/common/WishlistToast";
 import { CustomSplashScreen } from "@/src/components/CustomSplashScreen";
 import { QueryProvider } from "@/src/providers/QueryProvider";
@@ -157,7 +156,6 @@ export default function RootLayout() {
                   <LoginRequiredSheet />
                   <AppToast />
                   <WishlistToast />
-                  <CartToast />
                   <GlobalPopup />
                   <InAppNotificationBanner />
                 </AuthProvider>

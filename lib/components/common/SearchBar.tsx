@@ -42,6 +42,9 @@ type Props = {
   autoFocus?: boolean;
   onVoicePress?: () => void;
   onSubmitEditing?: () => void;
+  onFocus?: () => void;
+  onBlur?: () => void;
+  onClear?: () => void;
 };
 
 export function SearchBar({
@@ -53,6 +56,9 @@ export function SearchBar({
   autoFocus,
   onVoicePress,
   onSubmitEditing,
+  onFocus,
+  onBlur,
+  onClear,
 }: Props) {
   const [focused, setFocused] = useState(false);
   const focusProgress = useSharedValue(0);
@@ -109,7 +115,69 @@ export function SearchBar({
 
   const showRotatingTap = useRotating && isTapMode;
 
-  const body = (
+  const micColor = onVoicePress ? "#d2bd59" : "#6b7280";
+
+  const trailingControl =
+    !isTapMode && hasValue ? (
+      <Pressable
+        accessibilityLabel="Clear search"
+        hitSlop={10}
+        onPress={() => {
+          onChangeText?.("");
+          onClear?.();
+        }}
+        style={styles.trailingBtn}
+      >
+        <MaterialIcons name="close" size={16} color="#6b7280" />
+      </Pressable>
+    ) : (
+      <Pressable
+        accessibilityLabel="Voice search"
+        hitSlop={10}
+        onPress={onVoicePress}
+        disabled={!onVoicePress && !isTapMode}
+        style={styles.trailingBtn}
+      >
+        <MaterialIcons name="mic-none" size={18} color={micColor} />
+      </Pressable>
+    );
+
+  if (isTapMode) {
+    return (
+      <Animated.View style={[styles.wrap, shellStyle]}>
+        <Pressable
+          accessibilityRole="search"
+          accessibilityLabel={placeholder}
+          onPress={onPress}
+          style={styles.tapMain}
+          android_ripple={{ color: "rgba(0,0,0,0.04)" }}
+        >
+          <MaterialIcons
+            name="search"
+            size={20}
+            color={iconColor}
+            style={styles.icon}
+          />
+          <View style={styles.inputSlot}>
+            {showRotatingTap ? (
+              <RotatingSearchPlaceholder
+                phrases={rotatingPlaceholders}
+                paused={false}
+                style={styles.placeholderTypography}
+              />
+            ) : (
+              <Text style={styles.placeholder} numberOfLines={1}>
+                {placeholder}
+              </Text>
+            )}
+          </View>
+        </Pressable>
+        {trailingControl}
+      </Animated.View>
+    );
+  }
+
+  return (
     <Animated.View style={[styles.wrap, shellStyle]}>
       <MaterialIcons
         name="search"
@@ -117,88 +185,42 @@ export function SearchBar({
         color={iconColor}
         style={styles.icon}
       />
-
-      {isTapMode ? (
-        <View style={styles.inputSlot}>
-          {showRotatingTap ? (
+      <View style={styles.inputSlot}>
+        <TextInput
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={inputPlaceholder}
+          placeholderTextColor="#9ca3af"
+          style={styles.input}
+          autoCorrect={false}
+          autoCapitalize="none"
+          returnKeyType="search"
+          autoFocus={autoFocus}
+          clearButtonMode="never"
+          selectionColor="#111827"
+          onFocus={() => {
+            setFocused(true);
+            onFocus?.();
+          }}
+          onBlur={() => {
+            setFocused(false);
+            onBlur?.();
+          }}
+          onSubmitEditing={onSubmitEditing}
+        />
+        {showRotatingOverlay ? (
+          <View style={styles.placeholderOverlay} pointerEvents="none">
             <RotatingSearchPlaceholder
               phrases={rotatingPlaceholders}
               paused={false}
               style={styles.placeholderTypography}
             />
-          ) : (
-            <Text style={styles.placeholder} numberOfLines={1}>
-              {placeholder}
-            </Text>
-          )}
-        </View>
-      ) : (
-        <View style={styles.inputSlot}>
-          <TextInput
-            value={value}
-            onChangeText={onChangeText}
-            placeholder={inputPlaceholder}
-            placeholderTextColor="#9ca3af"
-            style={styles.input}
-            autoCorrect={false}
-            autoCapitalize="none"
-            returnKeyType="search"
-            autoFocus={autoFocus}
-            clearButtonMode="never"
-            selectionColor="#111827"
-            onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
-            onSubmitEditing={onSubmitEditing}
-          />
-          {showRotatingOverlay ? (
-            <View style={styles.placeholderOverlay} pointerEvents="none">
-              <RotatingSearchPlaceholder
-                phrases={rotatingPlaceholders}
-                paused={false}
-                style={styles.placeholderTypography}
-              />
-            </View>
-          ) : null}
-        </View>
-      )}
-
-      {!isTapMode && hasValue ? (
-        <Pressable
-          accessibilityLabel="Clear search"
-          hitSlop={10}
-          onPress={() => onChangeText?.("")}
-          style={styles.trailingBtn}
-        >
-          <MaterialIcons name="close" size={16} color="#6b7280" />
-        </Pressable>
-      ) : (
-        <Pressable
-          accessibilityLabel="Voice search"
-          hitSlop={10}
-          onPress={onVoicePress}
-          disabled={!onVoicePress && !isTapMode}
-          style={styles.trailingBtn}
-        >
-          <MaterialIcons name="mic-none" size={18} color="#6b7280" />
-        </Pressable>
-      )}
+          </View>
+        ) : null}
+      </View>
+      {trailingControl}
     </Animated.View>
   );
-
-  if (isTapMode) {
-    return (
-      <Pressable
-        accessibilityRole="search"
-        accessibilityLabel={placeholder}
-        onPress={onPress}
-        android_ripple={{ color: "rgba(0,0,0,0.04)" }}
-      >
-        {body}
-      </Pressable>
-    );
-  }
-
-  return body;
 }
 
 const styles = StyleSheet.create({
@@ -209,6 +231,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     height: 50,
     borderWidth: 1,
+  },
+  tapMain: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: 48,
   },
   icon: {
     marginRight: spacing.sm,

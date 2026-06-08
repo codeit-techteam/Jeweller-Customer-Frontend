@@ -3,11 +3,10 @@ import React, { useEffect, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { handleLoginSuccess } from '@/lib/services/postLoginSync';
 import { useGuestSessionStore } from '@/lib/stores/guestSessionStore';
-import { useCartStore } from '@/lib/stores/cartStore';
 import { trackGuestBrowsing, trackLoginSuccess } from '@/services/analyticsTracking';
 
 /**
- * Watches auth state and runs post-login sync (cart merge, wishlist sync, pending actions).
+ * Watches auth state and runs post-login sync (wishlist sync, pending actions).
  * Skips the initial session hydration so refresh does not re-run sync.
  */
 export function PostLoginSyncHandler() {
@@ -16,12 +15,10 @@ export function PostLoginSyncHandler() {
   const initialHydrationRef = useRef(true);
   const guestBrowsingTrackedRef = useRef(false);
   const hydrateGuest = useGuestSessionStore((s) => s.hydrate);
-  const hydrateCart = useCartStore((s) => s.hydrateCart);
 
   useEffect(() => {
     void hydrateGuest();
-    void hydrateCart();
-  }, [hydrateGuest, hydrateCart]);
+  }, [hydrateGuest]);
 
   useEffect(() => {
     if (loading) return;

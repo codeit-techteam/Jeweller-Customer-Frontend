@@ -247,13 +247,6 @@ export default function ProfileTabScreen() {
           <>
             <View style={styles.menuBlock}>
               <ProfileMenuItem
-                icon="account-balance-wallet"
-                title="Active Plans"
-                badgeCount={2}
-                badgeTone="navy"
-                onPress={() => router.push('/(app)/active-plans')}
-              />
-              <ProfileMenuItem
                 icon="storefront"
                 title="Saved Boutiques"
                 onPress={() => router.push('/(app)/saved-boutiques')}

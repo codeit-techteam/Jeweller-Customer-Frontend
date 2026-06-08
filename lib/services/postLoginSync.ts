@@ -5,28 +5,7 @@ import { useGuestSessionStore } from '@/lib/stores/guestSessionStore';
 import { useSavedBoutiquesStore } from '@/lib/stores/savedBoutiquesStore';
 import { useWishlistStore } from '@/lib/stores/wishlistStore';
 import { showWishlistToast } from '@/lib/stores/wishlistToastStore';
-import { showCartToast } from '@/lib/stores/cartToastStore';
-import { useCartStore, type CartLine } from '@/lib/stores/cartStore';
 import { trackActionCompletedAfterLogin } from '@/services/analyticsTracking';
-
-/** Merge guest + user cart: same SKU increases qty, new SKUs append. */
-export function mergeCartLines(guestItems: CartLine[], userItems: CartLine[]): CartLine[] {
-  const merged = [...userItems];
-  for (const guestLine of guestItems) {
-    const idx = merged.findIndex(
-      (x) =>
-        x.productId === guestLine.productId &&
-        x.size === guestLine.size &&
-        x.metal === guestLine.metal,
-    );
-    if (idx >= 0) {
-      merged[idx] = { ...merged[idx], qty: merged[idx].qty + guestLine.qty };
-    } else {
-      merged.push(guestLine);
-    }
-  }
-  return merged;
-}
 
 async function syncGuestWishlist(userId: string): Promise<void> {
   const guestStore = useGuestSessionStore.getState();
@@ -45,19 +24,8 @@ async function syncGuestWishlist(userId: string): Promise<void> {
   await guestStore.clearGuestWishlist();
 }
 
-export async function mergeGuestCartOnLogin(): Promise<void> {
-  const cartStore = useCartStore.getState();
-  const guestItems = [...cartStore.items];
-  // Server cart fetch can be wired here; until then merge with empty user cart.
-  const userItems: CartLine[] = [];
-  const merged = mergeCartLines(guestItems, userItems);
-  cartStore.setItems(merged);
-  await cartStore.persistCart();
-}
-
 export async function runPostLoginSync(userId: string): Promise<void> {
   await Promise.all([
-    mergeGuestCartOnLogin(),
     syncGuestWishlist(userId),
     useSavedBoutiquesStore.getState().hydrateForUser(userId),
   ]);
@@ -69,7 +37,6 @@ export async function executePendingAction(
 ): Promise<void> {
   const wishlistStore = useWishlistStore.getState();
   const savedStore = useSavedBoutiquesStore.getState();
-  const cartStore = useCartStore.getState();
 
   switch (action.type) {
     case 'wishlist': {
@@ -85,19 +52,6 @@ export async function executePendingAction(
       }
       break;
     }
-    case 'cart_add': {
-      cartStore.addItem(action.line, { skipToast: true });
-      showCartToast({ message: 'Added to Cart ✓' });
-      break;
-    }
-    case 'wishlist_move_to_cart': {
-      const { completePendingWishlistMoveToCart } = await import(
-        '@/lib/services/wishlistMoveToCartAction'
-      );
-      await completePendingWishlistMoveToCart(action.productId, action.line);
-      break;
-    }
-    case 'cart_checkout':
     case 'checkout': {
       router.push('/(app)/address-details');
       break;

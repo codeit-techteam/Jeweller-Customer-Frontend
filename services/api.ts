@@ -51,6 +51,42 @@ export function getCategories() {
   >("/api/categories");
 }
 
+export function getCategoryListing(slugOrName: string) {
+  return request<{
+    category: {
+      id: string;
+      name: string;
+      slug?: string | null;
+      product_ids?: string[];
+    };
+    products: Array<{
+      id: string;
+      name: string;
+      price: number;
+      image: string | null;
+      primary_image?: string | null;
+      thumbnail_image?: string | null;
+      category_id: string | null;
+      boutique_id: string | null;
+      status?: string;
+      category?: { id: string; name: string } | null;
+      boutique?: {
+        id: string;
+        name: string;
+        location: string | null;
+        rating: number | null;
+        reviews_count?: number | null;
+        verified?: boolean | null;
+        is_verified?: boolean | null;
+        image: string | null;
+      } | null;
+    }>;
+  }>("/api/categories/listing/by-slug", {
+    method: "GET",
+    params: { slug: slugOrName },
+  });
+}
+
 export function getProducts(categoryId?: string) {
   return request<
     Array<{
@@ -105,6 +141,35 @@ export function getProducts(categoryId?: string) {
       ? { method: "GET", params: { category_id: categoryId } }
       : { method: "GET" },
   );
+}
+
+export function searchCustomerProducts(q: string, limit = 12) {
+  return request<{
+    products: Array<{
+      id: string;
+      name: string;
+      price: number;
+      image: string | null;
+      primary_image?: string | null;
+      thumbnail_image?: string | null;
+      featured_image?: string | null;
+      gallery_images?: string[];
+      images?: string[];
+      product_images?: Array<{ id: string; image_url: string }>;
+      category?: { id: string; name: string } | null;
+      boutique?: {
+        id: string;
+        name: string;
+        rating: number | null;
+        verified?: boolean | null;
+        is_verified?: boolean | null;
+      } | null;
+    }>;
+    query: string;
+  }>("/api/customer/products/search", {
+    method: "GET",
+    params: { q, limit },
+  });
 }
 
 export function getTrendingProducts() {
@@ -234,38 +299,67 @@ export function getProductById(id: string) {
   }>(`/api/products/${id}`, { method: "GET" });
 }
 
+type BoutiqueListApiRow = {
+  id: string;
+  name: string;
+  location: string | null;
+  rating: number | null;
+  image: string | null;
+  cover_image?: string | null;
+  logo_url?: string | null;
+  logo?: string | null;
+  logo_image?: string | null;
+  gallery_images?: string[];
+  banner_images?: string[];
+  opening_time?: string | null;
+  closing_time?: string | null;
+  working_days?: string[];
+  opening_hours?: string | null;
+  reviews_count?: number | null;
+  featured?: boolean;
+  is_featured?: boolean;
+  verified?: boolean;
+  is_verified?: boolean;
+  status?: string;
+  description?: string | null;
+  latest_collection_name?: string | null;
+  coordinates?: { lat: number; lng: number } | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  distance_km?: number | null;
+  created_at?: string | null;
+  phone?: string | null;
+  phone_number?: string | null;
+};
+
 export function getBoutiques() {
   const stamp = Date.now();
-  return request<
-    Array<{
-      id: string;
-      name: string;
-      location: string | null;
-      rating: number | null;
-      image: string | null;
-      cover_image?: string | null;
-      logo_url?: string | null;
-      logo?: string | null;
-      logo_image?: string | null;
-      gallery_images?: string[];
-      banner_images?: string[];
-      opening_time?: string | null;
-      closing_time?: string | null;
-      working_days?: string[];
-      opening_hours?: string | null;
-      reviews_count?: number | null;
-      featured?: boolean;
-      verified?: boolean;
-      is_verified?: boolean;
-      status?: string;
-      description?: string | null;
-      latest_collection_name?: string | null;
-      coordinates?: { lat: number; lng: number } | null;
-      latitude?: number | null;
-      longitude?: number | null;
-      created_at?: string | null;
-    }>
-  >("/api/boutiques", { method: "GET", params: { t: stamp } });
+  return request<BoutiqueListApiRow[]>("/api/boutiques", {
+    method: "GET",
+    params: { t: stamp },
+  });
+}
+
+export function getFeaturedBoutiques(opts?: {
+  lat?: number;
+  lng?: number;
+  limit?: number;
+  radius_km?: number;
+}) {
+  const stamp = Date.now();
+  const params: Record<string, string | number> = { t: stamp };
+  if (opts?.lat != null && Number.isFinite(opts.lat)) params.lat = opts.lat;
+  if (opts?.lng != null && Number.isFinite(opts.lng)) params.lng = opts.lng;
+  if (opts?.limit != null && Number.isFinite(opts.limit)) {
+    params.limit = opts.limit;
+  }
+  if (opts?.radius_km != null && Number.isFinite(opts.radius_km)) {
+    params.radius_km = opts.radius_km;
+  }
+  return request<BoutiqueListApiRow[]>("/api/customer/boutiques/featured", {
+    method: "GET",
+    params,
+  });
 }
 
 export function getBoutiqueById(id: string) {

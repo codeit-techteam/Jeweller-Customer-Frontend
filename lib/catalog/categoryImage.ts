@@ -1,6 +1,6 @@
 /**
  * Category image resolution — priority:
- * 1. Database URL (category_image_url or legacy image) if reachable on Unsplash CDN
+ * 1. CMS upload URL from `image` or `category_image_url` (any valid http/https)
  * 2. Curated Unsplash map by slug/name (verified HTTP 200)
  * 3. null — caller uses RemoteImage placeholder="category"
  */
@@ -89,8 +89,7 @@ function usableDbUrl(url: string | null | undefined): string | null {
  * Never returns another category's image as fallback.
  */
 export function resolveCategoryImageUrl(source: CategoryImageSource): string | null {
-  const db =
-    usableDbUrl(source.category_image_url) ?? usableDbUrl(source.image) ?? null;
+  const db = usableDbUrl(source.image) ?? usableDbUrl(source.category_image_url) ?? null;
   if (db) return db;
 
   const bySlug = source.slug ? curatedCategoryImageUrl(source.slug) : null;

@@ -1,18 +1,12 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useRouter } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo } from "react";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { WishlistCard } from "@/lib/components/common/WishlistCard";
-import { CartNavIcon } from "@/lib/components/common/CartNavIcon";
 import { pushProductDetails } from "@/lib/navigation/productNavigation";
-import {
-  moveWishlistItemToCart,
-  showBottomError,
-} from "@/lib/services/wishlistMoveToCartAction";
-import { useCartStore } from "@/lib/stores/cartStore";
 import { useWishlistStore } from "@/lib/stores/wishlistStore";
 import { FLAT_LIST_WINDOWED_PROPS } from "@/lib/constants/flatListPerformance";
 import { fontSizes, spacing } from "@/src/constants/theme";
@@ -28,10 +22,6 @@ export default function WishlistScreen() {
   const loading = useWishlistStore((s) => s.loading);
   const toggleWishlist = useWishlistStore((s) => s.toggle);
   const refreshWishlist = useWishlistStore((s) => s.refresh);
-  const cartCount = useCartStore((s) =>
-    s.items.reduce((acc, line) => acc + line.qty, 0),
-  );
-  const [movingId, setMovingId] = useState<string | null>(null);
 
   const rows = useMemo(() => ids.map((id) => items[id]).filter(Boolean), [ids, items]);
 
@@ -53,25 +43,6 @@ export default function WishlistScreen() {
     useCallback(() => refreshWishlist({ silent: true }), [refreshWishlist]),
   );
 
-  const onMoveToCart = useCallback(
-    async (id: string) => {
-      const row = items[id];
-      if (!row || movingId) return;
-
-      setMovingId(id);
-      try {
-        const result = await moveWishlistItemToCart(row);
-        if (result.ok || result.needsLogin) return;
-        showBottomError(result.message);
-      } catch {
-        showBottomError("Unable to connect. Please try again.");
-      } finally {
-        setMovingId(null);
-      }
-    },
-    [items, movingId],
-  );
-
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.header}>
@@ -83,14 +54,7 @@ export default function WishlistScreen() {
           <MaterialIcons name="arrow-back-ios" size={22} color={NAVY} />
         </Pressable>
         <Text style={styles.headerTitle}>Wishlist</Text>
-        <CartNavIcon
-          variant="plain"
-          count={cartCount}
-          onPress={() => router.push("/(app)/cart")}
-          size={24}
-          iconColor={NAVY}
-          style={styles.cartWrap}
-        />
+        <View style={styles.headerSpacer} />
       </View>
 
       <View style={styles.tabRow}>
@@ -132,10 +96,8 @@ export default function WishlistScreen() {
           renderItem={({ item }) => (
             <WishlistCard
               item={item}
-              moving={movingId === item.id}
               onPressCard={() => openProduct(item.id)}
               onPressHeart={() => onHeart(item.id)}
-              onMoveToCart={() => void onMoveToCart(item.id)}
             />
           )}
         />
@@ -159,12 +121,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: NAVY,
   },
-  cartWrap: {
-    position: "relative",
-    width: 40,
-    alignItems: "flex-end",
-    justifyContent: "center",
-  },
+  headerSpacer: { width: 40 },
   tabRow: {
     flexDirection: "row",
     paddingHorizontal: spacing.lg,

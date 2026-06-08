@@ -5,10 +5,17 @@ import { useEffect, useMemo } from "react";
 import { useUserLocationStore } from "@/lib/stores/userLocationStore";
 import type { UserCoords } from "@/services/boutique.service";
 
+export type UserLocation = {
+  latitude: number;
+  longitude: number;
+};
+
 export type UserLocationState = {
   coords: UserCoords | null;
+  location: UserLocation | null;
   error: string | null;
   permission: PermissionStatus | null;
+  permissionDenied: boolean;
   loading: boolean;
   /** Granted but no GPS fix after attempts (show distance-unavailable copy only in this case). */
   gpsFailed: boolean;
@@ -28,6 +35,13 @@ export function useUserLocation(enabled = true): UserLocationState {
     void useUserLocationStore.getState().init();
   }, [enabled]);
 
+  const location = useMemo<UserLocation | null>(() => {
+    if (!coords) return null;
+    return { latitude: coords.lat, longitude: coords.lng };
+  }, [coords]);
+
+  const permissionDenied = permission === Location.PermissionStatus.DENIED;
+
   const gpsFailed = useMemo(
     () =>
       permission === Location.PermissionStatus.GRANTED &&
@@ -37,5 +51,5 @@ export function useUserLocation(enabled = true): UserLocationState {
     [permission, loading, coords, error],
   );
 
-  return { coords, error, permission, loading, gpsFailed };
+  return { coords, location, error, permission, permissionDenied, loading, gpsFailed };
 }

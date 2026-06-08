@@ -13,7 +13,7 @@ import {
   type BoutiqueProfileViewModel,
   type BoutiqueUiListItem,
 } from "@/lib/boutiques/boutiqueUi";
-import { getBoutiqueById, getBoutiques } from "@/services/api";
+import { getBoutiqueById, getBoutiques, getFeaturedBoutiques } from "@/services/api";
 import {
   calculateDistanceKm as geoDistanceKm,
   parseCoord,
@@ -39,6 +39,20 @@ export type BoutiqueStatusUi = {
  * Fetches boutiques without baking in distance (GPS may arrive after first paint).
  * Use `applyUserLocationToBoutiqueList` with the global user coords for card distances.
  */
+function mapBoutiqueRowsForUi(
+  rows: BoutiqueApiListRow[],
+  userLocation?: UserCoords | null,
+): BoutiqueUiListItem[] {
+  return rows.map((row, index) => {
+    const item = mapBoutiqueForUi(row, index, { userLocation: userLocation ?? null });
+    const apiDistance = (row as BoutiqueApiListRow & { distance_km?: number | null }).distance_km;
+    if (apiDistance != null && Number.isFinite(apiDistance)) {
+      return { ...item, distanceKm: apiDistance };
+    }
+    return item;
+  });
+}
+
 export async function fetchBoutiques(_userLocation?: UserCoords | null): Promise<BoutiqueUiListItem[]> {
   const rows = await getBoutiques();
   if (__DEV__) {
@@ -54,9 +68,39 @@ export async function fetchBoutiques(_userLocation?: UserCoords | null): Promise
       });
     }
   }
-  return rows.map((row, index) =>
-    mapBoutiqueForUi(row as BoutiqueApiListRow, index, { userLocation: null }),
-  );
+  return mapBoutiqueRowsForUi(rows as BoutiqueApiListRow[], null);
+}
+
+export async function fetchFeaturedBoutiques(
+  userLocation?: UserCoords | null,
+  limit = 10,
+  radiusKm?: number,
+): Promise<BoutiqueUiListItem[]> {
+  const params = {
+    lat: userLocation?.lat,
+    lng: userLocation?.lng,
+    limit,
+    radius_km: userLocation && radiusKm != null ? radiusKm : undefined,
+  };
+  if (__DEV__) {
+    const qs = new URLSearchParams();
+    if (params.lat != null) qs.set("lat", String(params.lat));
+    if (params.lng != null) qs.set("lng", String(params.lng));
+    qs.set("limit", String(limit));
+    if (params.radius_km != null) qs.set("radius_km", String(params.radius_km));
+    console.log("[Featured] Fetching:", `/api/customer/boutiques/featured?${qs.toString()}`);
+  }
+  try {
+    const rows = await getFeaturedBoutiques(params);
+    if (__DEV__) {
+      console.log("[Featured] Boutiques count:", rows?.length ?? 0);
+      console.log("[Featured] Data received:", JSON.stringify(rows?.slice(0, 2)));
+    }
+    return mapBoutiqueRowsForUi(rows as BoutiqueApiListRow[], userLocation ?? null);
+  } catch (e) {
+    console.error("[Featured] Fetch error:", e);
+    throw e;
+  }
 }
 
 export function applyUserLocationToBoutiqueList(
@@ -64,7 +108,7 @@ export function applyUserLocationToBoutiqueList(
   userLocation: UserCoords | null,
 ): BoutiqueUiListItem[] {
   if (!userLocation) {
-    return items.map((item) => ({ ...item, distanceKm: null }));
+    return items;
   }
   return items.map((item) => {
     const la = parseCoord(item.latitude);

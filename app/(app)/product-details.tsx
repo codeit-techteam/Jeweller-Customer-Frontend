@@ -1,4 +1,5 @@
 import FontAwesome5 from "@expo/vector-icons/FontAwesome5";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -51,7 +52,6 @@ import {
 import { pushProductDetails } from "@/lib/navigation/productNavigation";
 import { resolveCoverImage } from "@/lib/boutiques/boutiqueUi";
 import { snapshotFromProductDetail } from "@/lib/services/mock/wishlist";
-import { useCartStore } from "@/lib/stores/cartStore";
 import { useRecentlyViewedStore } from "@/lib/stores/recentlyViewedStore";
 import { addRecentlyViewed } from "@/services/api";
 import { recordProductViewAnalytics, trackGuestViewedProduct } from "@/services/analyticsTracking";
@@ -76,52 +76,62 @@ function paramId(raw: string | string[] | undefined): string | undefined {
   return Array.isArray(raw) ? raw[0] : raw;
 }
 
-/** First remote image URL for cart rows (mock catalog does not know API UUIDs). */
-function firstHttpGalleryUri(images: ProductDetail["images"]): string | undefined {
-  for (const img of images) {
-    const u = img.uri?.trim();
-    if (u && /^https?:\/\//i.test(u)) return u;
-  }
-  return undefined;
-}
-
-const promiseTiles = [
+const trustBadges: {
+  icon: React.ComponentProps<typeof MaterialCommunityIcons>["name"];
+  label: string;
+  sublabel: string;
+}[] = [
   {
-    title: "100% REFUND",
-    body: "Return within 30 Days of Delivery",
-    icon: "inventory" as const,
+    icon: "shield-check",
+    label: "BIS Hallmarked",
+    sublabel: "Certified Purity",
   },
   {
-    title: "LIFETIME EXCHANGE & BUYBACK",
-    body: "Exchange for current value or get cash",
-    icon: "sync" as const,
+    icon: "certificate",
+    label: "IGI / GIA Certified",
+    sublabel: "Authenticated Stone",
   },
   {
-    title: "100% CERTIFIED JEWELLERY",
-    body: "BIS Hallmark, IGI, SGL, GIA, HKD",
-    icon: "verified" as const,
-  },
-  {
-    title: "EXCLUSIVE DESIGNS",
-    body: "6000+ designs by award-winning designers",
-    icon: "brush" as const,
+    icon: "recycle",
+    label: "Lifetime Exchange",
+    sublabel: "At Current Value",
   },
 ];
 
-const promiseIcon = (name: (typeof promiseTiles)[number]["icon"]) => {
-  switch (name) {
-    case "inventory":
-      return "inventory-2" as const;
-    case "sync":
-      return "sync" as const;
-    case "verified":
-      return "verified" as const;
-    case "brush":
-      return "brush" as const;
-    default:
-      return "star" as const;
-  }
-};
+const promiseCards: {
+  icon: React.ComponentProps<typeof MaterialCommunityIcons>["name"];
+  title: string;
+  subtitle: string;
+}[] = [
+  {
+    icon: "shield-check-outline",
+    title: "BIS Hallmarked",
+    subtitle: "Every piece certified for purity & authenticity",
+  },
+  {
+    icon: "diamond-stone",
+    title: "Certified Stones",
+    subtitle: "IGI, GIA, SGL certified diamonds & gemstones",
+  },
+  {
+    icon: "handshake-outline",
+    title: "Trusted Jewellers",
+    subtitle: "Only verified boutiques on GehnaHub",
+  },
+  {
+    icon: "pencil-ruler",
+    title: "Custom Orders",
+    subtitle: "Get pieces made to your exact specification",
+  },
+];
+
+function VerifiedBadge() {
+  return (
+    <View style={styles.verifiedBadge}>
+      <MaterialCommunityIcons name="check" size={11} color="#fff" />
+    </View>
+  );
+}
 
 export default function ProductDetailsScreen() {
   const router = useRouter();
@@ -140,7 +150,6 @@ export default function ProductDetailsScreen() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [priceBreakOpen, setPriceBreakOpen] = useState(true);
 
-  const addItem = useCartStore((s) => s.addItem);
   const trackProductView = useRecentlyViewedStore((s) => s.trackProductView);
   const { user, isGuest } = useAuth();
   const requireAuth = useAuthGuard();
@@ -157,8 +166,7 @@ export default function ProductDetailsScreen() {
     }
     let cancelled = false;
     setLoading(true);
-    // Clear stale product immediately so we never show product A while route `id` is B
-    // (otherwise Add to cart can persist the wrong item).
+    // Clear stale product immediately so we never show product A while route `id` is B.
     setProduct(null);
     setRelated([]);
     (async () => {
@@ -323,19 +331,6 @@ export default function ProductDetailsScreen() {
     pushProductDetails(router, rid);
   };
 
-  const addToCart = () => {
-    addItem({
-      productId: product.id,
-      name: product.name,
-      price: product.price,
-      size,
-      metal,
-      qty: 1,
-      subtitle: `${metal} / ${size}`,
-      imageUri: firstHttpGalleryUri(product.images),
-    });
-  };
-
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.topBar}>
@@ -419,21 +414,19 @@ export default function ProductDetailsScreen() {
           </ScrollView>
         ) : null}
 
-        <View style={[styles.trustRow, styles.trustRowSpaced]}>
-          {[
-            {
-              icon: "workspace-premium" as const,
-              label: "Certified Jewellery",
-            },
-            { icon: "autorenew" as const, label: "Lifetime Exchange" },
-            { icon: "assignment-return" as const, label: "30-Day Return" },
-          ].map((t) => (
-            <View key={t.label} style={styles.trustItem}>
-              <MaterialIcons name={t.icon} size={22} color="#4b5563" />
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.trustScroller}
+        >
+          {trustBadges.map((t) => (
+            <View key={t.label} style={styles.trustChip}>
+              <MaterialCommunityIcons name={t.icon} size={22} color="#4b5563" />
               <Text style={styles.trustLabel}>{t.label}</Text>
+              <Text style={styles.trustSublabel}>{t.sublabel}</Text>
             </View>
           ))}
-        </View>
+        </ScrollView>
 
         <View style={styles.descCard}>
           <Text style={styles.descHeading}>Product description</Text>
@@ -462,9 +455,6 @@ export default function ProductDetailsScreen() {
         </View>
 
         <View style={[styles.boutiqueBlock, styles.boutiqueBlockSpaced]}>
-          <Text style={styles.boutiqueHeading}>
-            Available at Nearest Boutique
-          </Text>
           <View style={styles.boutiqueCard}>
             <View style={styles.boutiqueRow}>
               {product.boutique.logo ?? product.boutique.image ? (
@@ -489,14 +479,7 @@ export default function ProductDetailsScreen() {
                   <Text style={styles.boutiqueName} numberOfLines={1}>
                     {product.boutique.name}
                   </Text>
-                  {product.boutique.verified ? (
-                    <MaterialIcons
-                      name="verified"
-                      size={14}
-                      color="#2563EB"
-                      style={styles.boutiqueVerifiedIcon}
-                    />
-                  ) : null}
+                  {product.boutique.verified ? <VerifiedBadge /> : null}
                 </View>
                 {boutiqueHoursUi ? (
                   <View style={styles.boutiqueStatusWrap}>
@@ -528,23 +511,12 @@ export default function ProductDetailsScreen() {
                 onPress={() =>
                   router.push({
                     pathname: "/(app)/boutique-profile",
-                    params: {
-                      id: product.boutique.id,
-                    },
+                    params: { id: product.boutique.id },
                   })
                 }
               >
                 <Text style={styles.viewProfile}>View Profile</Text>
               </Pressable>
-            </View>
-            <View style={styles.availRow}>
-              <MaterialIcons name="check-circle" size={18} color="#16a34a" />
-              <Text style={styles.availText}>
-                Available at {product.boutiquesAvailable} boutiques near you.{" "}
-                <Text style={styles.availLink} onPress={openCategory}>
-                  View Stores
-                </Text>
-              </Text>
             </View>
           </View>
         </View>
@@ -649,11 +621,6 @@ export default function ProductDetailsScreen() {
           </Pressable>
         </View>
 
-        <Pressable style={styles.addCart} onPress={addToCart}>
-          <MaterialIcons name="shopping-bag" size={20} color="#fff" />
-          <Text style={styles.addCartText}>Add to Cart</Text>
-        </Pressable>
-
         {product.hasSpecsSection ? (
           <View style={styles.specsSection}>
             <Pressable
@@ -735,15 +702,15 @@ export default function ProductDetailsScreen() {
         <View style={styles.promiseSection}>
           <Text style={styles.promiseHeading}>Our Promise</Text>
           <View style={styles.promiseGrid}>
-            {promiseTiles.map((tile) => (
-              <View key={tile.title} style={styles.promiseTile}>
-                <MaterialIcons
-                  name={promiseIcon(tile.icon)}
+            {promiseCards.map((card) => (
+              <View key={card.title} style={styles.promiseTile}>
+                <MaterialCommunityIcons
+                  name={card.icon}
                   size={28}
                   color={NAVY}
                 />
-                <Text style={styles.promiseTileTitle}>{tile.title}</Text>
-                <Text style={styles.promiseTileBody}>{tile.body}</Text>
+                <Text style={styles.promiseTileTitle}>{card.title}</Text>
+                <Text style={styles.promiseTileBody}>{card.subtitle}</Text>
               </View>
             ))}
           </View>
@@ -840,25 +807,38 @@ const styles = StyleSheet.create({
   },
   scrollContent: { paddingBottom: spacing.xl },
   upperStack: { gap: spacing.lg },
-  trustRowSpaced: {
-    marginTop: spacing.xl,
-  },
-  trustRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+  trustScroller: {
     paddingHorizontal: spacing.lg,
-    marginTop: spacing.lg,
+    marginTop: spacing.xl,
     paddingVertical: spacing.lg,
+    gap: spacing.md,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderColor: "#f3f4f6",
   },
-  trustItem: { flex: 1, alignItems: "center", gap: 4 },
+  trustChip: {
+    width: 120,
+    alignItems: "center",
+    gap: 4,
+  },
   trustLabel: {
     fontSize: fontSizes.xs,
-    color: "#4b5563",
+    color: "#374151",
     textAlign: "center",
-    fontWeight: "500",
+    fontWeight: "600",
+  },
+  trustSublabel: {
+    fontSize: 10,
+    color: "#9ca3af",
+    textAlign: "center",
+  },
+  verifiedBadge: {
+    backgroundColor: "#1A73E8",
+    borderRadius: 10,
+    width: 18,
+    height: 18,
+    alignItems: "center",
+    justifyContent: "center",
   },
   descCard: {
     marginHorizontal: spacing.lg,
@@ -904,12 +884,6 @@ const styles = StyleSheet.create({
   },
   boutiqueBlock: { paddingHorizontal: spacing.lg, marginTop: spacing.xl },
   boutiqueBlockSpaced: { marginTop: spacing["2xl"] },
-  boutiqueHeading: {
-    fontSize: fontSizes.md,
-    fontWeight: "700",
-    color: "#111827",
-    marginBottom: spacing.sm,
-  },
   boutiqueCard: {
     backgroundColor: "#f9fafb",
     borderRadius: radius.lg,
@@ -963,9 +937,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 6,
   },
-  boutiqueVerifiedIcon: {
-    marginTop: 1,
-  },
   boutiqueStatusWrap: { marginTop: 6, alignSelf: "flex-start" },
   boutiqueRatingRow: {
     flexDirection: "row",
@@ -976,13 +947,6 @@ const styles = StyleSheet.create({
   boutiqueRatingText: { fontSize: fontSizes.xs, color: "#6b7280" },
   boutiqueLoc: { fontSize: fontSizes.xs, color: "#9ca3af", marginTop: 2 },
   viewProfile: { fontSize: fontSizes.sm, fontWeight: "600", color: NAVY },
-  availRow: { flexDirection: "row", alignItems: "flex-start", gap: spacing.sm },
-  availText: { flex: 1, fontSize: fontSizes.sm, color: "#374151" },
-  availLink: {
-    fontWeight: "700",
-    color: NAVY,
-    textDecorationLine: "underline",
-  },
   bookBtn: {
     marginHorizontal: spacing.lg,
     marginTop: spacing.lg,
@@ -1018,18 +982,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#111827",
   },
-  addCart: {
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.md,
-    backgroundColor: NAVY,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.sm,
-  },
-  addCartText: { fontSize: fontSizes.md, fontWeight: "700", color: "#fff" },
   specsSection: { marginHorizontal: spacing.lg, marginTop: spacing.xl },
   specsHead: {
     flexDirection: "row",

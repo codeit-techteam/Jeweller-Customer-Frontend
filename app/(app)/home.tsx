@@ -1,8 +1,11 @@
+import Ionicons from "@expo/vector-icons/Ionicons";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import * as Location from "expo-location";
 import { useFocusEffect } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     FlatList,
     ImageBackground,
@@ -39,10 +42,11 @@ import {
 } from "@/lib/components/common/ListingProductCard";
 import { RemoteImage } from "@/lib/components/common/RemoteImage";
 import { SearchBar } from "@/lib/components/common/SearchBar";
+import { VoiceSearchModal } from "@/lib/components/common/VoiceSearchModal";
 import { SEARCH_ROTATING_PLACEHOLDERS } from "@/lib/constants/searchRotatingPlaceholders";
-import { CartNavIcon } from "@/lib/components/common/CartNavIcon";
 import { WishlistNavIcon } from "@/lib/components/common/WishlistNavIcon";
 import { FeaturedBoutiqueCard } from "@/lib/components/home/FeaturedBoutiqueCard";
+import { WhyChooseGehnaHubSection } from "@/lib/components/home/WhyChooseGehnaHub";
 import { lazyNamedScreen } from "@/lib/utils/lazyScreen";
 import { FLAT_LIST_HORIZONTAL_PROPS, FLAT_LIST_WINDOWED_PROPS } from "@/lib/constants/flatListPerformance";
 
@@ -54,6 +58,7 @@ import { pushCollection } from "@/lib/navigation/collectionNavigation";
 import { pushProductDetails } from "@/lib/navigation/productNavigation";
 import {
     fetchBoutiquesUi,
+    fetchFeaturedBoutiquesUi,
     fetchCategoriesUi,
     fetchCollectionsUi,
     fetchFeaturedSectionsUi,
@@ -66,12 +71,11 @@ import {
     PLACEHOLDER_IMAGE_URI,
 } from "@/lib/services/mock/imageUrls";
 import { snapshotFromListingFields } from "@/lib/services/mock/wishlist";
-import { useCartStore } from "@/lib/stores/cartStore";
 import { NotificationBadge } from "@/lib/components/common/NotificationBadge";
 import { useNotificationsStore } from "@/lib/stores/notificationsStore";
 import { useWishlistIds, useWishlistStore } from "@/lib/stores/wishlistStore";
 import { ApiError } from "@/services/api";
-import { applyUserLocationToBoutiqueList } from "@/services/boutique.service";
+import { applyUserLocationToBoutiqueList, type UserCoords } from "@/services/boutique.service";
 import { BottomTabBar } from "@/src/components/navigation/BottomTabBar";
 import { colors, fontSizes, radius, spacing } from "@/src/constants/theme";
 
@@ -93,19 +97,6 @@ function toHomeTrendingListing(item: TrendingProduct): ListingProductCardItem {
   };
 }
 
-/** Home — “The GehnaHub Promise” (Figma: 2×2 grid + centered fifth row) */
-const PROMISE_ICON_SIZE = 26;
-const PROMISE_ITEMS: {
-  icon: React.ComponentProps<typeof MaterialIcons>["name"];
-  label: string;
-}[] = [
-  { icon: "verified", label: "100%\nTRANSPARENCY" },
-  { icon: "workspace-premium", label: "CERTIFIED\nJEWELRY" },
-  { icon: "local-shipping", label: "FREE\nINSURED\nSHIPPING" },
-  { icon: "assignment-return", label: "EASY\nRETURNS" },
-  { icon: "published-with-changes", label: "LIFETIME\nEXCHANGE" },
-];
-
 function SectionTitle({
   title,
   onPress,
@@ -123,7 +114,7 @@ function SectionTitle({
   );
 }
 
-function HomeContent() {
+function HomeContent({ onVoicePress }: { onVoicePress?: () => void }) {
   const requireAuth = useAuthGuard();
   const [homeCategoryPreview, setHomeCategoryPreview] = useState<string[]>([]);
   const [homeCategoryImageByName, setHomeCategoryImageByName] = useState<
@@ -133,6 +124,10 @@ function HomeContent() {
     TrendingProduct[]
   >([]);
   const [rawBoutiques, setRawBoutiques] = useState<Boutique[]>([]);
+  const [featuredBoutiques, setFeaturedBoutiques] = useState<Boutique[]>([]);
+  const [featuredLoading, setFeaturedLoading] = useState(true);
+  const featuredLoadedRef = useRef(false);
+  const featuredFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [occasionData, setOccasionData] = useState<
     Array<{
       id: string;
@@ -153,28 +148,31 @@ function HomeContent() {
   const reachable = useNetworkReachable();
   const { effectiveCoords: userCoords } = useDiscoveryLocation();
   const {
+    coords: gpsCoords,
     loading: locationLoading,
     permission: locationPermission,
+    permissionDenied,
     gpsFailed: locationGpsFailed,
   } = useUserLocation(true);
 
   const boutiquesData = useMemo(
-    () => applyUserLocationToBoutiqueList(rawBoutiques, userCoords),
-    [rawBoutiques, userCoords],
+    () => applyUserLocationToBoutiqueList(rawBoutiques, gpsCoords ?? userCoords),
+    [rawBoutiques, gpsCoords, userCoords],
   );
+  const featuredBoutiquesData = useMemo(
+    () => applyUserLocationToBoutiqueList(featuredBoutiques, gpsCoords ?? userCoords),
+    [featuredBoutiques, gpsCoords, userCoords],
+  );
+  const showLocationBanner = permissionDenied;
   const router = useRouter();
   const wishIds = useWishlistIds();
   const wishlistCount = useWishlistStore((s) => s.count);
   const toggleWishlist = useWishlistStore((s) => s.toggle);
-  const cartCount = useCartStore((s) =>
-    s.items.reduce((acc, line) => acc + line.qty, 0),
-  );
   const unreadNotificationsCount = useNotificationsStore((s) => s.unreadCount);
   const openWishlist = useCallback(
     () => router.push("/(app)/wishlist"),
     [router],
   );
-  const openCart = useCallback(() => router.push("/(app)/cart"), [router]);
   const { width: winW } = useWindowDimensions();
   /** Scroll content uses paddingHorizontal: 16; four columns with sm gaps between. */
   const categoryColW = useMemo(
@@ -186,6 +184,47 @@ function HomeContent() {
     () => Math.min(280, Math.max(200, Math.round(winW * 0.58))),
     [winW],
   );
+  const loadFeaturedBoutiques = useCallback(async (coords: UserCoords | null) => {
+    setFeaturedLoading(true);
+    try {
+      const rows = await fetchFeaturedBoutiquesUi(coords, 10, coords ? 50 : undefined);
+      setFeaturedBoutiques(rows);
+      featuredLoadedRef.current = true;
+      if (__DEV__) {
+        console.log("[Featured] Home state updated, count:", rows.length);
+      }
+    } catch (error) {
+      console.error("[Featured] Fetch error:", error);
+    } finally {
+      setFeaturedLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    featuredFallbackTimerRef.current = setTimeout(() => {
+      if (!featuredLoadedRef.current) {
+        if (__DEV__) {
+          console.log("[Featured] 3s fallback — fetching without location");
+        }
+        void loadFeaturedBoutiques(null);
+      }
+    }, 3000);
+    return () => {
+      if (featuredFallbackTimerRef.current) {
+        clearTimeout(featuredFallbackTimerRef.current);
+      }
+    };
+  }, [loadFeaturedBoutiques]);
+
+  useEffect(() => {
+    if (locationLoading) return;
+    if (featuredFallbackTimerRef.current) {
+      clearTimeout(featuredFallbackTimerRef.current);
+      featuredFallbackTimerRef.current = null;
+    }
+    void loadFeaturedBoutiques(gpsCoords);
+  }, [gpsCoords?.lat, gpsCoords?.lng, locationLoading, loadFeaturedBoutiques]);
+
   const loadHomeData = useCallback(async (opts?: { silent?: boolean }) => {
     const silent = opts?.silent ?? false;
     if (!silent) {
@@ -259,7 +298,11 @@ function HomeContent() {
   );
 
   const { refreshControl } = usePullToRefresh(
-    useCallback(() => loadHomeData({ silent: true }), [loadHomeData]),
+    useCallback(async () => {
+      await loadHomeData({ silent: true });
+      featuredLoadedRef.current = false;
+      await loadFeaturedBoutiques(gpsCoords);
+    }, [loadHomeData, loadFeaturedBoutiques, gpsCoords]),
   );
 
   const renderOccasionItem = useCallback(
@@ -481,14 +524,6 @@ function HomeContent() {
             bgColor={styles.iconButton.backgroundColor as string}
             borderColor={styles.iconButton.borderColor as string}
           />
-
-          <CartNavIcon
-            count={cartCount}
-            onPress={openCart}
-            iconColor={styles.icon.color}
-            bgColor={styles.iconButton.backgroundColor as string}
-            borderColor={styles.iconButton.borderColor as string}
-          />
         </View>
       </View>
 
@@ -497,6 +532,7 @@ function HomeContent() {
           placeholder="Search by Category, Occasion, Relationship"
           rotatingPlaceholders={SEARCH_ROTATING_PLACEHOLDERS}
           onPress={() => router.push("/search")}
+          onVoicePress={onVoicePress}
         />
       </View>
 
@@ -621,10 +657,32 @@ function HomeContent() {
         title="Featured Boutiques Near You"
         onPress={openAllBoutiques}
       />
-      {loading ? (
+      {showLocationBanner ? (
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Enable location in settings"
+          activeOpacity={0.85}
+          onPress={() => Linking.openSettings().catch(() => {})}
+        >
+          <View style={styles.locationBanner}>
+            <Ionicons name="location-outline" size={16} color="#F59E0B" />
+            <Text style={styles.locationBannerText}>
+              Enable location to see boutiques nearest to you
+            </Text>
+            <Text style={styles.locationBannerAction}>Enable</Text>
+          </View>
+        </TouchableOpacity>
+      ) : null}
+      {loading || featuredLoading ? (
         <BoutiqueSkeletonLoader count={2} />
+      ) : featuredBoutiquesData.length === 0 ? (
+        <View style={styles.featuredEmpty}>
+          <Text style={styles.featuredEmptyText}>
+            No featured boutiques in your area yet
+          </Text>
+        </View>
       ) : (
-        boutiquesData
+        featuredBoutiquesData
           .slice(0, 2)
           .map((item) => (
             <FeaturedBoutiqueCard
@@ -766,62 +824,33 @@ function HomeContent() {
           ))
         : null}
 
-      <View style={styles.promiseSection}>
-        <Text style={styles.promiseHeading}>The GehnaHub Promise</Text>
-        <View style={styles.promiseRow}>
-          {PROMISE_ITEMS.slice(0, 2).map((item) => (
-            <View key={item.label} style={styles.promiseCell}>
-              <View style={styles.promiseIconCircle}>
-                <MaterialIcons
-                  name={item.icon}
-                  size={PROMISE_ICON_SIZE}
-                  color="#111827"
-                />
-              </View>
-              <Text style={styles.promiseText}>{item.label}</Text>
-            </View>
-          ))}
-        </View>
-        <View style={styles.promiseRow}>
-          {PROMISE_ITEMS.slice(2, 4).map((item) => (
-            <View key={item.label} style={styles.promiseCell}>
-              <View style={styles.promiseIconCircle}>
-                <MaterialIcons
-                  name={item.icon}
-                  size={PROMISE_ICON_SIZE}
-                  color="#111827"
-                />
-              </View>
-              <Text style={styles.promiseText}>{item.label}</Text>
-            </View>
-          ))}
-        </View>
-        <View style={[styles.promiseRow, styles.promiseRowSingle]}>
-          {PROMISE_ITEMS.slice(4, 5).map((item) => (
-            <View key={item.label} style={styles.promiseCellSingle}>
-              <View style={styles.promiseIconCircle}>
-                <MaterialIcons
-                  name={item.icon}
-                  size={PROMISE_ICON_SIZE}
-                  color="#111827"
-                />
-              </View>
-              <Text style={styles.promiseText}>{item.label}</Text>
-            </View>
-          ))}
-        </View>
-      </View>
+      <WhyChooseGehnaHubSection />
     </View>
     </ScrollView>
   );
 }
 
 export default function HomeScreen() {
+  const router = useRouter();
+  const [voiceModalVisible, setVoiceModalVisible] = useState(false);
+
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
       <View style={styles.inner}>
-        <HomeContent />
+        <HomeContent onVoicePress={() => setVoiceModalVisible(true)} />
       </View>
+      <VoiceSearchModal
+        visible={voiceModalVisible}
+        onClose={() => setVoiceModalVisible(false)}
+        onResultSelect={(product) => {
+          setVoiceModalVisible(false);
+          pushProductDetails(router, product.id);
+        }}
+        onSearchByText={() => {
+          setVoiceModalVisible(false);
+          router.push("/search");
+        }}
+      />
       <BottomTabBar />
     </SafeAreaView>
   );
@@ -980,6 +1009,35 @@ const styles = StyleSheet.create({
     color: "#555",
     fontWeight: "700",
   },
+  featuredEmpty: {
+    paddingVertical: 28,
+    paddingHorizontal: 16,
+    alignItems: "center",
+  },
+  featuredEmptyText: {
+    fontSize: 14,
+    color: "#888888",
+    textAlign: "center",
+  },
+  locationBanner: {
+    backgroundColor: "#FFF8E1",
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  locationBannerText: {
+    fontSize: 12,
+    color: "#92400E",
+    flex: 1,
+  },
+  locationBannerAction: {
+    fontSize: 12,
+    color: "#D97706",
+    fontWeight: "600",
+  },
   loadMoreOuter: { marginVertical: 16 },
   loadMoreBtn: {
     backgroundColor: "#0b1f48",
@@ -1077,58 +1135,6 @@ const styles = StyleSheet.create({
   nearestBoutiqueDistance: { fontSize: 12, color: "#777" },
   trendingFlatContent: { marginBottom: spacing["2xl"] },
   trendingRow: { justifyContent: "space-between" },
-  promiseSection: {
-    marginHorizontal: -16,
-    backgroundColor: "#fff",
-    paddingTop: spacing["2xl"],
-    paddingBottom: spacing["2xl"],
-    paddingHorizontal: spacing.lg,
-    marginBottom: spacing.lg,
-  },
-  promiseHeading: {
-    textAlign: "center",
-    fontSize: fontSizes.xl,
-    fontWeight: "700",
-    color: "#111827",
-    marginBottom: spacing.xl,
-  },
-  promiseRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: spacing.xl,
-    paddingHorizontal: spacing.xs,
-  },
-  promiseRowSingle: {
-    justifyContent: "center",
-    marginBottom: 0,
-  },
-  promiseCell: {
-    width: "46%",
-    maxWidth: 200,
-    alignItems: "center",
-  },
-  promiseCellSingle: {
-    width: "46%",
-    maxWidth: 200,
-    alignItems: "center",
-  },
-  promiseIconCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#ebebeb",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: spacing.sm,
-  },
-  promiseText: {
-    textAlign: "center",
-    fontSize: 10,
-    fontWeight: "700",
-    color: "#374151",
-    letterSpacing: 0.4,
-    lineHeight: 14,
-  },
   loadInfo: {
     paddingHorizontal: 4,
     marginBottom: 8,

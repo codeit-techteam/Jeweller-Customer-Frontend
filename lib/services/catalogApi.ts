@@ -3,6 +3,7 @@ import {
     ApiError,
     getBoutiqueById,
     getCategories,
+    getCategoryListing,
     getCollectionBySlug,
     getCollections,
     getDiscoverFeaturedProducts,
@@ -21,7 +22,7 @@ import {
   type TrendingSearchChip,
 } from "@/lib/services/mock/search";
 import { formatBoutiqueLocation } from "@/lib/utils/formatBoutiqueLocation";
-import { fetchBoutiques } from "@/services/boutique.service";
+import { fetchBoutiques, fetchFeaturedBoutiques } from "@/services/boutique.service";
 import type { UserCoords } from "@/services/boutique.service";
 
 export type ProductImage = {
@@ -352,10 +353,9 @@ export async function fetchCategoriesUi(): Promise<CategoryUi[]> {
   return rows.map((row) => {
     const slug = row.slug ?? row.name.toLowerCase().replace(/\s+/g, "-");
     const resolved = resolveCategoryImageUrl({
-      category_image_url:
-        (row as { category_image_url?: string | null }).category_image_url ??
-        row.image,
       image: row.image,
+      category_image_url: (row as { category_image_url?: string | null })
+        .category_image_url,
       name: row.name,
       slug,
     });
@@ -378,6 +378,19 @@ export async function fetchCategoriesUi(): Promise<CategoryUi[]> {
 export async function fetchBoutiquesUi(userLocation?: UserCoords | null) {
   if (__DEV__) console.log("Fetching boutiques...");
   return fetchBoutiques(userLocation ?? undefined);
+}
+
+export async function fetchFeaturedBoutiquesUi(
+  userLocation?: UserCoords | null,
+  limit = 10,
+  radiusKm = 50,
+) {
+  if (__DEV__) console.log("Fetching featured boutiques...", userLocation);
+  return fetchFeaturedBoutiques(
+    userLocation ?? undefined,
+    limit,
+    userLocation ? radiusKm : undefined,
+  );
 }
 
 export type CollectionUi = {
@@ -651,6 +664,12 @@ export async function fetchGiftCollectionsUi(): Promise<GiftCollectionUi[]> {
 
 export async function fetchCategoryProductsUi() {
   const rows = await getProducts();
+  return mapProductRowsToCategoryUi(rows);
+}
+
+function mapProductRowsToCategoryUi(
+  rows: Awaited<ReturnType<typeof getProducts>>,
+): CategoryProductUi[] {
   return rows.map((row, index): CategoryProductUi => {
     const boutique = row.boutique ?? null;
     const ratingRaw = boutique?.rating;
@@ -680,6 +699,16 @@ export async function fetchCategoryProductsUi() {
       openNow: true,
     };
   });
+}
+
+/** Admin-curated category listing in exact CMS sort order. */
+export async function fetchCategoryListingUi(categorySlugOrName: string) {
+  const listing = await getCategoryListing(categorySlugOrName);
+  return {
+    category: listing.category,
+    products: mapProductRowsToCategoryUi(listing.products),
+    productIds: listing.category.product_ids ?? listing.products.map((p) => p.id),
+  };
 }
 
 export async function fetchRelationshipSectionsUi() {

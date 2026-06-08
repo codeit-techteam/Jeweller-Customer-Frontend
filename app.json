@@ -12,7 +12,9 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.gehnahub.app",
       "infoPlist": {
-        "CFBundleDisplayName": "GehnaHub"
+        "CFBundleDisplayName": "GehnaHub",
+        "NSMicrophoneUsageDescription": "GehnaHub needs microphone to search by voice",
+        "NSSpeechRecognitionUsageDescription": "GehnaHub uses speech recognition to find jewellery for you"
       }
     },
     "android": {
@@ -59,6 +61,13 @@
         "expo-location",
         {
           "locationWhenInUsePermission": "Allow this app to access your location to calculate nearby boutiques."
+        }
+      ],
+      [
+        "@react-native-voice/voice",
+        {
+          "microphonePermission": "GehnaHub needs microphone to search by voice",
+          "speechRecognitionPermission": "GehnaHub uses speech recognition to find jewellery for you"
         }
       ]
     ],

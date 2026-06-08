@@ -2,6 +2,7 @@
  * Featured boutique card (Home → Featured Boutiques Near You).
  * Action row uses shared BoutiqueActionButtons.
  */
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import React, { useMemo } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -11,21 +12,16 @@ import { BoutiqueActionButtons } from '@/lib/components/common/BoutiqueActionBut
 import { BoutiqueStatusBadge } from '@/lib/components/common/BoutiqueStatusBadge';
 import { RemoteImage } from '@/lib/components/common/RemoteImage';
 import {
-  selectDistanceLineGpsFailed,
-  useUserLocationStore,
-} from '@/lib/stores/userLocationStore';
-import {
-  boutiqueHasCoordinates,
-  formatBoutiqueDistanceLine,
+  formatFeaturedCardDistanceLine,
 } from '@/lib/utils/formatBoutiqueDistance';
 
 const TITLE = '#0B1B2B';
 const META = '#6B7280';
+const DISTANCE = '#888888';
 const STAR_GOLD = '#C9A227';
-const CORAL = '#E76F51';
 const TAG_BG = '#E8EEF5';
 const TAG_TEXT = '#4B5563';
-const VERIFIED_PILL_BG = '#F3F4F6';
+const VERIFIED_GREEN = '#00C853';
 const CARD_SHADOW = Platform.select({
   ios: {
     shadowColor: '#000',
@@ -45,8 +41,8 @@ type Props = {
   onBookAppt: () => void;
 };
 
-function showVerifiedOverlay(item: BoutiqueUiListItem): boolean {
-  return /VERIFIED|TRUSTED|PREMIER|CURATED|PARTNER/i.test(item.tag);
+function isVerifiedBoutique(item: BoutiqueUiListItem): boolean {
+  return /VERIFIED/i.test(item.tag);
 }
 
 export function FeaturedBoutiqueCard({
@@ -56,14 +52,11 @@ export function FeaturedBoutiqueCard({
   onCall,
   onBookAppt,
 }: Props) {
-  const locationLoading = useUserLocationStore((s) => s.loading);
-  const locationPermission = useUserLocationStore((s) => s.permission);
-  const userLocationGpsFailed = useUserLocationStore(selectDistanceLineGpsFailed);
-  // TODO: restore visits line when copy is final
-  // const visits = item.weeklyVisits ?? 24 + (item.id.length % 28);
-  // const highlightTail =
-  //   item.highlightSuffix ?? 'this week for bespoke bridal consultations.';
-  const tagPair = useMemo(() => item.tags.slice(0, 2), [item.tags]);
+  const categoryTags = useMemo(
+    () => item.tags.filter((t) => !/^VERIFIED$/i.test(t.trim())).slice(0, 2),
+    [item.tags],
+  );
+  const distanceLine = formatFeaturedCardDistanceLine(item.distanceKm);
 
   return (
     <View style={[styles.card, CARD_SHADOW]}>
@@ -80,9 +73,10 @@ export function FeaturedBoutiqueCard({
             placeholder="boutique-cover"
             style={styles.image}
           />
-          {showVerifiedOverlay(item) ? (
+          {isVerifiedBoutique(item) ? (
             <View style={styles.verifiedBadge}>
-              <Text style={styles.verifiedBadgeText}>✔ VERIFIED BOUTIQUE</Text>
+              <MaterialCommunityIcons name="shield-check" size={13} color="#fff" />
+              <Text style={styles.verifiedBadgeText}>VERIFIED</Text>
             </View>
           ) : null}
           <View style={styles.statusBadgeWrap} pointerEvents="none">
@@ -110,47 +104,29 @@ export function FeaturedBoutiqueCard({
                 <Text style={styles.metaText}>{item.reviewsCount} reviews</Text>
               </>
             ) : null}
-            {(() => {
-              const distanceLine = formatBoutiqueDistanceLine({
-                distanceKm: item.distanceKm,
-                locationLoading,
-                hasBoutiqueCoords: boutiqueHasCoordinates(item),
-                permission: locationPermission,
-                userLocationGpsFailed,
-              });
-              if (!distanceLine) return null;
-              return (
-                <>
-                  <Text style={styles.metaDot}> • </Text>
-                  <Text style={styles.metaText}>{distanceLine}</Text>
-                </>
-              );
-            })()}
           </View>
 
-          <View style={styles.locationRow}>
-            <MaterialIcons name="place" size={16} color={META} />
-            <Text style={styles.location} numberOfLines={1}>
-              {item.location}
-            </Text>
+          <View style={styles.locationBlock}>
+            <View style={styles.locationRow}>
+              <MaterialIcons name="place" size={16} color={META} />
+              <Text style={styles.location} numberOfLines={1}>
+                {item.location}
+              </Text>
+            </View>
+            {distanceLine ? (
+              <Text style={styles.distanceLine}>{distanceLine}</Text>
+            ) : null}
           </View>
 
-          {tagPair.length > 0 ? (
+          {categoryTags.length > 0 ? (
             <View style={styles.tagRow}>
-              {tagPair.map((t) => (
+              {categoryTags.map((t) => (
                 <View key={t} style={styles.tag}>
                   <Text style={styles.tagText}>{t}</Text>
                 </View>
               ))}
             </View>
           ) : null}
-
-          {/* TODO: restore — e.g. "34 visited … this week for bespoke bridal consultations."
-          <Text style={styles.highlightText}>
-            <Text style={styles.highlightCoral}>{visits} visited</Text>
-            {` ${highlightTail}`}
-          </Text>
-          */}
         </View>
       </Pressable>
 
@@ -189,17 +165,24 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 12,
     left: 12,
-    backgroundColor: VERIFIED_PILL_BG,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: VERIFIED_GREEN,
     paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 14,
-    maxWidth: '88%',
+    paddingVertical: 5,
+    borderRadius: 20,
+    gap: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
   },
   verifiedBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: TITLE,
-    letterSpacing: 0.4,
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   statusBadgeWrap: {
     position: 'absolute',
@@ -232,16 +215,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: META,
   },
+  locationBlock: {
+    marginTop: 6,
+  },
   locationRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginTop: 6,
   },
   location: {
     flex: 1,
     fontSize: 14,
     color: META,
+  },
+  distanceLine: {
+    marginTop: 2,
+    marginLeft: 22,
+    fontSize: 12,
+    color: DISTANCE,
   },
   tagRow: {
     flexDirection: 'row',
@@ -260,15 +251,5 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: TAG_TEXT,
     letterSpacing: 0.5,
-  },
-  highlightText: {
-    fontSize: 13,
-    marginTop: 8,
-    lineHeight: 19,
-    color: META,
-  },
-  highlightCoral: {
-    color: CORAL,
-    fontWeight: '700',
   },
 });

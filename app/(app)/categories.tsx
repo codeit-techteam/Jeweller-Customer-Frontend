@@ -18,6 +18,8 @@ import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { CollectionExploreCard } from '@/lib/components/common/CollectionExploreCard';
 import { RemoteImage } from '@/lib/components/common/RemoteImage';
 import { SearchBar } from '@/lib/components/common/SearchBar';
+import { VoiceSearchModal } from '@/lib/components/common/VoiceSearchModal';
+import { pushProductDetails } from '@/lib/navigation/productNavigation';
 import { SEARCH_ROTATING_PLACEHOLDERS } from '@/lib/constants/searchRotatingPlaceholders';
 import { fetchCategoriesUi, fetchCollectionsUi } from '@/lib/services/catalogApi';
 import { PLACEHOLDER_IMAGE_URI } from '@/lib/services/mock/imageUrls';
@@ -62,6 +64,7 @@ export default function CategoriesScreen() {
   const [collections, setCollections] = useState<Array<{ id: string; title: string; subtitle: string; image: string | null; slug: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [voiceModalVisible, setVoiceModalVisible] = useState(false);
   const reachable = useNetworkReachable();
 
   const loadData = useCallback(async (opts?: { silent?: boolean }) => {
@@ -126,6 +129,7 @@ export default function CategoriesScreen() {
                 placeholder="Search categories or jewellery"
                 rotatingPlaceholders={SEARCH_ROTATING_PLACEHOLDERS}
                 onPress={openSearch}
+                onVoicePress={() => setVoiceModalVisible(true)}
               />
             </View>
             {reachable === false ? (
@@ -234,6 +238,18 @@ export default function CategoriesScreen() {
         </View>
         <BottomTabBar />
       </SafeAreaView>
+      <VoiceSearchModal
+        visible={voiceModalVisible}
+        onClose={() => setVoiceModalVisible(false)}
+        onResultSelect={(product) => {
+          setVoiceModalVisible(false);
+          pushProductDetails(router, product.id);
+        }}
+        onSearchByText={() => {
+          setVoiceModalVisible(false);
+          router.push('/search');
+        }}
+      />
     </View>
   );
 }

@@ -54,7 +54,8 @@ export default function AppRoutesLayout() {
       />
       <Stack.Screen name="trending" options={{ headerShown: false }} />
       <Stack.Screen name="wishlist" options={{ headerShown: false }} />
-      <Stack.Screen name="cart" options={{ headerShown: false }} />
+      {/* Cart disabled — checkout flow removed from app */}
+      {/* <Stack.Screen name="cart" options={{ headerShown: false }} /> */}
       <Stack.Screen name="address-details" options={{ headerShown: false }} />
       <Stack.Screen name="payment" options={{ headerShown: false }} />
       <Stack.Screen name="order-success" options={{ headerShown: false }} />

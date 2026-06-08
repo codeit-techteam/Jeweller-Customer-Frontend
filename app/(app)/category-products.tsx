@@ -26,6 +26,7 @@ import {
 } from "@/lib/components/listingFilters/ProductListingFilters";
 import {
   fetchCategoriesUi,
+  fetchCategoryListingUi,
   fetchCategoryProductsUi,
   inferMetalFromName,
   type CategoryUi,
@@ -171,14 +172,30 @@ export default function CategoryProductsScreen() {
           setAdminCategories([]);
           setError(null);
         } else {
-          const [rows, cmsCategories] = await Promise.all([
-            fetchCategoryProductsUi(),
-            fetchCategoriesUi().catch(() => [] as CategoryUi[]),
-          ]);
-          if (!mounted) return;
-          setApiProducts(rows as ApiCategoryProduct[]);
-          setAdminCategories(cmsCategories);
-          setError(null);
+          try {
+            const listing = await fetchCategoryListingUi(category);
+            if (!mounted) return;
+            setApiProducts(listing.products as ApiCategoryProduct[]);
+            setAdminCategories([
+              {
+                id: listing.category.id,
+                name: listing.category.name,
+                image: null,
+                slug: listing.category.slug ?? null,
+                productIds: listing.productIds,
+              },
+            ]);
+            setError(null);
+          } catch {
+            const [rows, cmsCategories] = await Promise.all([
+              fetchCategoryProductsUi(),
+              fetchCategoriesUi().catch(() => [] as CategoryUi[]),
+            ]);
+            if (!mounted) return;
+            setApiProducts(rows as ApiCategoryProduct[]);
+            setAdminCategories(cmsCategories);
+            setError(null);
+          }
         }
       } catch {
         if (!mounted) return;
@@ -190,7 +207,7 @@ export default function CategoryProductsScreen() {
     return () => {
       mounted = false;
     };
-  }, [relationshipMode, relationshipSectionId]);
+  }, [relationshipMode, relationshipSectionId, category]);
 
   useEffect(() => {
     clearAll();
@@ -268,12 +285,26 @@ export default function CategoryProductsScreen() {
         setApiProducts(mapped);
         setAdminCategories([]);
       } else {
-        const [rows, cmsCategories] = await Promise.all([
-          fetchCategoryProductsUi(),
-          fetchCategoriesUi().catch(() => [] as CategoryUi[]),
-        ]);
-        setApiProducts(rows as ApiCategoryProduct[]);
-        setAdminCategories(cmsCategories);
+        try {
+          const listing = await fetchCategoryListingUi(category);
+          setApiProducts(listing.products as ApiCategoryProduct[]);
+          setAdminCategories([
+            {
+              id: listing.category.id,
+              name: listing.category.name,
+              image: null,
+              slug: listing.category.slug ?? null,
+              productIds: listing.productIds,
+            },
+          ]);
+        } catch {
+          const [rows, cmsCategories] = await Promise.all([
+            fetchCategoryProductsUi(),
+            fetchCategoriesUi().catch(() => [] as CategoryUi[]),
+          ]);
+          setApiProducts(rows as ApiCategoryProduct[]);
+          setAdminCategories(cmsCategories);
+        }
       }
       setError(null);
     } catch {
@@ -283,7 +314,7 @@ export default function CategoryProductsScreen() {
         setLoading(false);
       }
     }
-  }, [relationshipMode, relationshipSectionId]);
+  }, [relationshipMode, relationshipSectionId, category]);
 
   const { refreshControl } = usePullToRefresh(
     useCallback(() => fetchProducts({ silent: true }), [fetchProducts]),

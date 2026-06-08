@@ -123,10 +123,6 @@ export function trackGuestAuthAttempt(action: PendingAction): void {
     trackGuestWishlistAttempt(action.productId);
     return;
   }
-  if (action.type === 'cart_add') {
-    trackGuestCartAttempt(action.line.productId);
-    return;
-  }
   if (action.type === 'appointment' || action.type === 'book_visit') {
     trackGuestAppointmentAttempt(action.boutiqueId ?? '', action.productId);
   }

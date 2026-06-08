@@ -38,3 +38,19 @@ export function formatBoutiqueDistanceLine(args: {
   }
   return "Calculating distance...";
 }
+
+/**
+ * Distance line for featured boutique cards (below location).
+ * Under 1 km → meters; 1–50 km → km; over 50 km → hidden.
+ */
+export function formatFeaturedCardDistanceLine(
+  distanceKm: number | null | undefined,
+): string {
+  if (distanceKm == null || !Number.isFinite(distanceKm)) return "";
+  if (distanceKm > 50) return "";
+  if (distanceKm < 1) {
+    const meters = Math.max(1, Math.round(distanceKm * 1000));
+    return `${meters} m away`;
+  }
+  return `${distanceKm.toFixed(1)} km away`;
+}

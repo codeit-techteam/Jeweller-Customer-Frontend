@@ -12,18 +12,14 @@ const NAVY = "#0f172a";
 
 type WishlistCardProps = {
   item: WishlistItemRow;
-  moving?: boolean;
   onPressCard: () => void;
   onPressHeart: () => void;
-  onMoveToCart: () => void;
 };
 
 export function WishlistCard({
   item,
-  moving = false,
   onPressCard,
   onPressHeart,
-  onMoveToCart,
 }: WishlistCardProps) {
   return (
     <View style={styles.card}>
@@ -81,13 +77,6 @@ export function WishlistCard({
             maximumFractionDigits: 2,
           })}
         </Text>
-      </Pressable>
-      <Pressable
-        style={[styles.cta, moving && styles.ctaDisabled]}
-        onPress={onMoveToCart}
-        disabled={moving}
-      >
-        <Text style={styles.ctaText}>{moving ? "MOVING…" : "MOVE TO CART"}</Text>
       </Pressable>
     </View>
   );
@@ -153,22 +142,5 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.xs,
     color: "#64748b",
     marginBottom: 4,
-  },
-  cta: {
-    borderWidth: 1.5,
-    borderColor: NAVY,
-    borderRadius: 999,
-    paddingVertical: spacing.sm,
-    alignItems: "center",
-    backgroundColor: "#fff",
-  },
-  ctaDisabled: {
-    opacity: 0.55,
-  },
-  ctaText: {
-    fontSize: 9,
-    fontWeight: "800",
-    color: NAVY,
-    letterSpacing: 0.6,
   },
 });

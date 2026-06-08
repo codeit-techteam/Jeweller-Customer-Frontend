@@ -33,6 +33,7 @@ import { PressScale } from "@/lib/components/common/PressScale";
 import { ProductCard } from "@/lib/components/common/ProductCard";
 import { RemoteImage } from "@/lib/components/common/RemoteImage";
 import { SearchBar } from "@/lib/components/common/SearchBar";
+import { VoiceSearchModal } from "@/lib/components/common/VoiceSearchModal";
 import { SearchItem } from "@/lib/components/common/SearchItem";
 import {
     fetchCategoriesUi,
@@ -163,6 +164,7 @@ export default function SearchScreen() {
   const userId = user?.id ?? null;
 
   const [query, setQuery] = useState("");
+  const [voiceModalVisible, setVoiceModalVisible] = useState(false);
   const [recent, setRecent] = useState<RecentSearchEntry[]>([]);
   const [trendingChips, setTrendingChips] = useState<TrendingSearchChip[]>([]);
   const wishIds = useWishlistIds();
@@ -675,7 +677,6 @@ export default function SearchScreen() {
           <View style={styles.headerIcon} />
         </View>
 
-        {/* Unified search bar — same UI as Home */}
         <View style={styles.searchWrap}>
           <SearchBar
             value={query}
@@ -684,9 +685,7 @@ export default function SearchScreen() {
             rotatingPlaceholders={SEARCH_ROTATING_PLACEHOLDERS}
             autoFocus
             onSubmitEditing={commitSearchToRecents}
-            onVoicePress={() => {
-              /* voice search placeholder */
-            }}
+            onVoicePress={() => setVoiceModalVisible(true)}
           />
         </View>
 
@@ -975,6 +974,15 @@ export default function SearchScreen() {
           </ScrollView>
         )}
       </KeyboardAvoidingView>
+      <VoiceSearchModal
+        visible={voiceModalVisible}
+        onClose={() => setVoiceModalVisible(false)}
+        onResultSelect={(product) => {
+          setVoiceModalVisible(false);
+          pushProductDetails(router, product.id);
+        }}
+        onSearchByText={() => setVoiceModalVisible(false)}
+      />
       <BottomTabBar />
     </SafeAreaView>
   );
