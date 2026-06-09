@@ -357,7 +357,7 @@ export default function BoutiquesScreen() {
         />
         {reachable === false ? (
           <Text style={styles.offlineHint}>
-            No connection. Confirm Wi‑Fi and LAN API URL (EXPO_PUBLIC_API_URL).
+            No connection. Check internet and EXPO_PUBLIC_API_URL.
           </Text>
         ) : null}
         {loading ? (

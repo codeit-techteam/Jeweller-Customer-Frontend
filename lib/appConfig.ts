@@ -80,10 +80,16 @@ function getMetroBundlerHostname(): string | undefined {
 function resolveApiUrl(configuredRaw: string | undefined): string {
   const configured = normalizeExpoPublicApiUrl(configuredRaw);
 
+  // Honor any explicit non-localhost URL (production VPS, LAN IP, etc.) on all platforms.
+  if (configured && !isLocalhostUrl(configured)) {
+    return configured;
+  }
+
+  // Dev fallback: derive API host from Metro when env points to localhost or is unset.
   if (__DEV__) {
     const metroHost = getMetroBundlerHostname();
     if (metroHost) {
-      let port = '5105';
+      let port = '5106';
       if (configured) {
         try {
           const parsed = new URL(

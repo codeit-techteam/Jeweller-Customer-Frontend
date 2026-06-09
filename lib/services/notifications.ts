@@ -2,6 +2,11 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { isApiConfigured } from '@/lib/appConfig';
 import { getSupabase } from '@/lib/supabaseClient';
+import {
+  getNotificationSettings as getNotificationSettingsApi,
+  registerPushTokenApi,
+  updateNotificationSettingsApi,
+} from '@/services/api';
 import { apiRequest } from '@/services/httpClient';
 
 export type AppNotificationType =
@@ -394,10 +399,8 @@ export function resolveNotificationRoute(notification: AppNotification): {
   }
 }
 
-const API_BASE = process.env.EXPO_PUBLIC_BACKEND_API_URL ?? '';
-
 export async function fetchNotificationSettings(userId: string): Promise<NotificationSettings> {
-  if (!API_BASE) {
+  if (!(await useCustomerNotificationApi())) {
     return {
       user_id: userId,
       offers_enabled: true,
@@ -407,25 +410,17 @@ export async function fetchNotificationSettings(userId: string): Promise<Notific
       push_enabled: true,
     };
   }
-  const res = await fetch(`${API_BASE}/api/notifications/settings/${userId}`);
-  const json = await res.json();
-  if (!res.ok) throw new Error(json?.message ?? 'Failed to load settings');
-  return json.data as NotificationSettings;
+  return getNotificationSettingsApi(userId);
 }
 
 export async function updateNotificationSettings(
   userId: string,
   patch: Partial<NotificationSettings>,
 ): Promise<NotificationSettings> {
-  if (!API_BASE) throw new Error('Backend API URL is not configured');
-  const res = await fetch(`${API_BASE}/api/notifications/settings/${userId}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(patch),
-  });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json?.message ?? 'Failed to update settings');
-  return json.data as NotificationSettings;
+  if (!(await useCustomerNotificationApi())) {
+    throw new Error('Backend API URL is not configured');
+  }
+  return updateNotificationSettingsApi(userId, patch);
 }
 
 export async function registerPushToken(input: {
@@ -434,10 +429,6 @@ export async function registerPushToken(input: {
   platform?: string;
   provider?: string;
 }): Promise<void> {
-  if (!API_BASE) return;
-  await fetch(`${API_BASE}/api/notifications/push-token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  });
+  if (!(await useCustomerNotificationApi())) return;
+  await registerPushTokenApi(input);
 }

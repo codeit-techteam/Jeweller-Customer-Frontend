@@ -18,6 +18,8 @@ import { showPopup } from '@/lib/stores/popupStore';
 import { fontSizes, spacing } from '@/src/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import { useGuestLogout } from '@/src/hooks/useGuestLogout';
+import { isApiConfigured } from '@/lib/appConfig';
+import { postNotificationEvent } from '@/services/api';
 
 const NAVY_PRIMARY = '#0B1C3D';
 const INPUT_BG = '#F5F6F8';
@@ -110,11 +112,10 @@ export default function EditProfileScreen({ onBack }: EditProfileScreenProps) {
         phone: phoneDigits(phone),
         email: email.trim(),
       });
-      if (user?.id && process.env.EXPO_PUBLIC_BACKEND_API_URL) {
-        void fetch(`${process.env.EXPO_PUBLIC_BACKEND_API_URL}/api/notifications/events`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ eventKey: 'profile_updated', context: { userId: user.id } }),
+      if (user?.id && isApiConfigured()) {
+        void postNotificationEvent({
+          eventKey: 'profile_updated',
+          context: { userId: user.id },
         }).catch(() => {});
       }
       showPopup({

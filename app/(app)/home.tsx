@@ -603,8 +603,7 @@ function HomeContent({ onVoicePress }: { onVoicePress?: () => void }) {
       />
       {reachable === false ? (
         <Text style={styles.offlineHint}>
-          No network detected. Connect to Wi‑Fi and use the same LAN as your API
-          server (see EXPO_PUBLIC_API_URL).
+          No network detected. Check your internet connection (EXPO_PUBLIC_API_URL).
         </Text>
       ) : null}
       {errorMessage ? (

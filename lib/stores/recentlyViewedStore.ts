@@ -12,7 +12,6 @@ import {
   mapStoredBoutiquesToRecentlyViewed,
   type RecentlyViewedBoutique,
 } from '@/lib/services/mock/recentlyViewed';
-import { getProductById } from '@/lib/services/mock/products';
 import {
   clearRecentlyViewed,
   getRecentlyViewed,
@@ -165,8 +164,8 @@ async function loadDisplay(userId?: string | null): Promise<RecentlyViewedBoutiq
             id: product.id,
             name: product.name,
             price: Number(product.price ?? 0),
-            image: product.image ?? getProductById(product.id)?.images[0]?.uri ?? '',
-            category: getProductById(product.id)?.category,
+            image: product.image ?? '',
+            category: undefined,
           }
         : null;
 

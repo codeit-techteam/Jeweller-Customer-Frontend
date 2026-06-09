@@ -1,6 +1,7 @@
 import axios, { AxiosError, type AxiosRequestConfig, type AxiosResponse } from 'axios';
 
 import { appConfig, isApiConfigured, normalizeExpoPublicApiUrl } from '@/lib/appConfig';
+import { BASE_URL } from '@/lib/config/api';
 import { getSupabase } from '@/lib/supabaseClient';
 
 import { ApiError } from './apiError';
@@ -45,7 +46,10 @@ function axiosErrorToApiError(error: unknown): ApiError {
       if (low.includes('network')) {
         return new ApiError('Please check your internet connection and try again.', 'NETWORK');
       }
-      return new ApiError('Unable to reach server. Check Wi‑Fi and that the API URL matches your Mac’s LAN IP.', 'NETWORK');
+      return new ApiError(
+        'Unable to reach server. Check your internet connection and EXPO_PUBLIC_API_URL.',
+        'NETWORK',
+      );
     }
   }
   const message = error instanceof Error ? error.message : 'Something went wrong';
@@ -55,10 +59,12 @@ function axiosErrorToApiError(error: unknown): ApiError {
 type ApiEnvelope<T> = { success?: boolean; message?: string; data: T };
 
 export function getResolvedApiOrigin(): string {
-  return appConfig.apiUrl;
+  return appConfig.apiUrl || BASE_URL;
 }
 
 export const API_URL = getResolvedApiOrigin();
+
+export { BASE_URL };
 
 const axiosInstance = axios.create({
   baseURL: API_URL || undefined,

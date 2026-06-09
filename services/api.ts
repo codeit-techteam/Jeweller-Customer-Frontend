@@ -1,7 +1,7 @@
 import { apiRequest } from "./httpClient";
 
 export { ApiError } from "./apiError";
-export { API_URL, getResolvedApiOrigin } from "./httpClient";
+export { API_URL, BASE_URL, getResolvedApiOrigin } from "./httpClient";
 
 type RequestAuthOptions = {
   userId?: string;
@@ -905,5 +905,53 @@ export function createCallbackRequest(body: CreateCallbackRequestBody) {
   return request<CallbackRequestRow>("/api/callback-requests", {
     method: "POST",
     data: body,
+  });
+}
+
+export type NotificationSettingsRow = {
+  user_id: string;
+  offers_enabled: boolean;
+  appointments_enabled: boolean;
+  support_enabled: boolean;
+  system_enabled: boolean;
+  push_enabled: boolean;
+};
+
+export function getNotificationSettings(userId: string) {
+  return request<NotificationSettingsRow>(
+    `/api/notifications/settings/${encodeURIComponent(userId)}`,
+    { method: "GET" },
+  );
+}
+
+export function updateNotificationSettingsApi(
+  userId: string,
+  patch: Partial<Omit<NotificationSettingsRow, "user_id">>,
+) {
+  return request<NotificationSettingsRow>(
+    `/api/notifications/settings/${encodeURIComponent(userId)}`,
+    { method: "PATCH", data: patch },
+  );
+}
+
+export function registerPushTokenApi(input: {
+  userId: string;
+  token: string;
+  platform?: string;
+  provider?: string;
+}) {
+  return request<void>("/api/notifications/push-token", {
+    method: "POST",
+    data: input,
+  });
+}
+
+export function postNotificationEvent(input: {
+  eventKey: string;
+  context?: Record<string, unknown>;
+}) {
+  return request<void>("/api/notifications/events", {
+    method: "POST",
+    data: input,
   });
 }
